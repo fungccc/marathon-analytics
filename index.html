@@ -110,7 +110,7 @@
             });
         }
 
-        // 查詢功能
+        // 查詢功能與配速折線圖
         function searchRunner() {
             const bib = document.getElementById('bibInput').value.trim();
             const runner = allRunners.find(r => r.Bib === bib);
@@ -118,17 +118,93 @@
             
             if (!runner) {
                 resDiv.innerHTML = `<p class="text-red-500 font-bold">找不到號碼布 ${bib} 的選手！</p>`;
-            } else {
-                resDiv.innerHTML = `
-                    <h3 class="text-xl font-bold mb-2">${runner.Name || '未知姓名'}</h3>
-                    <p><strong>總排名：</strong> ${runner['Overall Place'] || '-'}</p>
-                    <p><strong>大會時間 (Gross)：</strong> ${runner['Gross Time'] || '-'}</p>
-                    <p><strong>晶片時間 (Net)：</strong> ${runner['Net Time'] || '-'}</p>
-                    <p><strong>組別：</strong> ${runner['Race Category'] || '-'} / <strong>年齡：</strong> ${runner.Age || '-'}</p>
-                `;
+                resDiv.style.display = 'block';
+                return; // 找不到就提早結束
             }
+
+            // 1. 保留原本的基本資料顯示，並在右側加入一個放置圖表的 canvas 空間
+            resDiv.innerHTML = `
+                <div class="flex flex-col md:flex-row gap-6">
+                    <div class="flex-1">
+                        <h3 class="text-2xl font-bold mb-4 text-blue-900">${runner.Name || '未知姓名'}</h3>
+                        <p class="mb-2"><strong>總排名：</strong> ${runner['Overall Place'] || '-'}</p>
+                        <p class="mb-2"><strong>大會時間 (Gross)：</strong> ${runner['Gross Time'] || '-'}</p>
+                        <p class="mb-2"><strong>晶片時間 (Net)：</strong> ${runner['Net Time'] || '-'}</p>
+                        <p class="mb-2"><strong>組別：</strong> ${runner['Race Category'] || '-'}</p>
+                        <p class="mb-2"><strong>年齡/性別：</strong> ${runner.Age || '-'} / ${runner.Sex || '-'}</p>
+                        <p class="mb-2"><strong>國籍：</strong> ${runner.Nationality || '-'}</p>
+                    </div>
+                    <div class="flex-1 relative min-h-[250px] bg-white p-2 rounded shadow-sm">
+                        <canvas id="lapChart"></canvas>
+                    </div>
+                </div>
+            `;
             resDiv.style.display = 'block';
+
+            // 2. 處理 5K 分段配速數據 (抽出純數字的 5km, 10km... 不含半馬與終點的不規則距離)
+            const lapPoints = ['5km', '10km', '15km', '20km', '25km', '30km', '35km', '40km'];
+            const lapData = lapPoints.map(point => {
+                const timeStr = runner[`${point}_Lap`];
+                // 確保有資料且不是橫槓 '-'
+                if (timeStr && timeStr !== '-' && typeof timeStr === 'string') {
+                    const parts = timeStr.split(':');
+                    if (parts.length === 3) {
+                        // 將 HH:MM:SS 轉成純分鐘數 (例如 00:14:30 => 14.5 分鐘)
+                        return parseInt(parts[0]) * 60 + parseInt(parts[1]) + parseInt(parts[2]) / 60;
+                    }
+                }
+                return null;
+            });
+
+            // 3. 繪製配速折線圖
+            // 重要：如果使用者連續搜尋，必須先銷毀舊圖表，否則 Chart.js 會報錯
+            if (window.lapChartInstance) {
+                window.lapChartInstance.destroy();
+            }
+
+            const ctx = document.getElementById('lapChart').getContext('2d');
+            window.lapChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: lapPoints,
+                    datasets: [{
+                        label: '每 5K 耗時 (分鐘) - 往上代表掉速',
+                        data: lapData,
+                        borderColor: '#ef4444',     // 紅色線條警示掉速
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: '#ef4444',
+                        pointRadius: 4,
+                        fill: true,                 // 底部填色讓圖表更豐富
+                        tension: 0.3                // 讓線條呈現平滑微曲線
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { 
+                            title: { display: true, text: '分段耗時 (分鐘)' } 
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    // 在提示框中，把小數點的分鐘數轉回好讀的 mm分ss秒
+                                    if (context.raw === null) return '無資料';
+                                    const totalSeconds = Math.round(context.raw * 60);
+                                    const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+                                    const s = (totalSeconds % 60).toString().padStart(2, '0');
+                                    return `耗時: ${m}分${s}秒`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
         }
+
 
         // 頁面載入時啟動
         window.onload = () => loadData('2026_Tokyo.csv');
