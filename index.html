@@ -110,7 +110,7 @@
             });
         }
 
-        // 查詢功能與「精準配速」折線圖
+        // 查詢功能與「動態計算配速」折線圖 (無視 CSV 錯誤 Lap 欄位)
         function searchRunner() {
             const bib = document.getElementById('bibInput').value.trim();
             const runner = allRunners.find(r => r.Bib === bib);
@@ -141,62 +141,69 @@
             `;
             resDiv.style.display = 'block';
 
-            // 2. 定義各區段、對應的 CSV 欄位名稱與實際距離
-            const lapSegments = [
-                { label: '0-5km', field: '5km_Lap', distance: 5 },
-                { label: '5-10km', field: '10km_Lap', distance: 5 },
-                { label: '10-15km', field: '15km_Lap', distance: 5 },
-                { label: '15-20km', field: '20km_Lap', distance: 5 },
-                { label: '20-25km', field: '25km_Lap', distance: 5 },
-                { label: '25-30km', field: '30km_Lap', distance: 5 },
-                { label: '30-35km', field: '35km_Lap', distance: 5 },
-                { label: '35-40km', field: '40km_Lap', distance: 5 },
-                { label: '40-Finish', field: 'フィニッシュ／Finish_Lap', distance: 2.195 }
+            // 2. 輔助函數：將 HH:MM:SS 或 MM:SS 轉成總秒數
+            function timeToSec(timeStr) {
+                if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
+                const parts = timeStr.split(':').map(Number);
+                if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+                if (parts.length === 2) return parts[0] * 60 + parts[1];
+                return null;
+            }
+
+            // 3. 定義累積距離節點 (使用絕對可靠的 _Inter 累積時間欄位)
+            const checkpoints = [
+                { label: '5km', field: '5km_Inter', dist: 5 },
+                { label: '10km', field: '10km_Inter', dist: 10 },
+                { label: '15km', field: '15km_Inter', dist: 15 },
+                { label: '20km', field: '20km_Inter', dist: 20 },
+                { label: '25km', field: '25km_Inter', dist: 25 },
+                { label: '30km', field: '30km_Inter', dist: 30 },
+                { label: '35km', field: '35km_Inter', dist: 35 },
+                { label: '40km', field: '40km_Inter', dist: 40 },
+                { label: 'Finish', field: 'フィニッシュ／Finish_Inter', dist: 42.195 }
             ];
 
             const chartLabels = [];
-            const chartData = [];    // 存放 Y 軸數據 (小數點分鐘，例如 2.95)
-            const tooltipText = [];  // 存放提示框文字 (例如 "02:57 /km")
+            const chartData = [];
+            const tooltipText = [];
 
-            lapSegments.forEach(seg => {
-                let timeStr = runner[seg.field];
+            let prevSec = 0;
+            let prevDist = 0;
+
+            // 4. 動態相減計算每一段的真實配速 (免疫 CSV 錯位問題)
+            checkpoints.forEach(pt => {
+                const currentSec = timeToSec(runner[pt.field]);
                 
-                // 防呆：如果 5km_Lap 是空的，嘗試抓 5km_Inter 代替 (因為 0-5km 耗時 = 通過時間)
-                if (seg.field === '5km_Lap' && (!timeStr || timeStr === '-')) {
-                    timeStr = runner['5km_Inter'];
-                }
+                // 產生 X 軸標籤 (例如 "35-40km" 或 "40-Finish")
+                const startLabel = prevDist === 0 ? '0' : prevDist;
+                const endLabel = pt.dist === 42.195 ? 'Finish' : pt.dist + 'km';
+                const segLabel = `${startLabel}-${endLabel}`;
 
-                if (timeStr && timeStr !== '-' && typeof timeStr === 'string') {
-                    const parts = timeStr.split(':');
-                    if (parts.length >= 2) { // 處理 HH:MM:SS 或 MM:SS
-                        let totalSeconds = 0;
-                        if (parts.length === 3) {
-                            totalSeconds = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2]);
-                        } else {
-                            totalSeconds = parseInt(parts[0]) * 60 + parseInt(parts[1]);
-                        }
-                        
-                        // 你的核心公式：計算每公里配速 (秒/公里)
-                        const paceSeconds = totalSeconds / seg.distance;
-                        
-                        // Y 軸繪圖用 (分鐘)
-                        chartData.push(paceSeconds / 60);
-                        
-                        // Tooltip 顯示用 (轉回 mm:ss 格式)
-                        const paceM = Math.floor(paceSeconds / 60);
-                        const paceS = Math.round(paceSeconds % 60).toString().padStart(2, '0');
-                        tooltipText.push(`${paceM}:${paceS} /km`);
-                        chartLabels.push(seg.label);
-                        return;
-                    }
+                if (currentSec !== null) {
+                    const lapSec = currentSec - prevSec;     // 該段花費秒數
+                    const lapDist = pt.dist - prevDist;      // 該段實際距離
+
+                    const paceSecPerKm = lapSec / lapDist;   // 配速 (秒/公里)
+                    
+                    chartData.push(paceSecPerKm / 60);       // Y軸畫圖用 (小數點分鐘)
+                    
+                    // Tooltip 顯示用 (轉回 mm:ss 格式)
+                    const paceM = Math.floor(paceSecPerKm / 60);
+                    const paceS = Math.round(paceSecPerKm % 60).toString().padStart(2, '0');
+                    tooltipText.push(`${paceM}:${paceS} /km`);
+                    chartLabels.push(segLabel);
+
+                    // 紀錄為前一個節點，給下一段相減用
+                    prevSec = currentSec;
+                    prevDist = pt.dist;
+                } else {
+                    chartData.push(null);
+                    tooltipText.push('無資料');
+                    chartLabels.push(segLabel);
                 }
-                // 若該段無資料
-                chartData.push(null);
-                tooltipText.push('無資料');
-                chartLabels.push(seg.label);
             });
 
-            // 3. 繪製配速折線圖
+            // 5. 繪製配速折線圖
             if (window.lapChartInstance) {
                 window.lapChartInstance.destroy();
             }
@@ -209,7 +216,7 @@
                     datasets: [{
                         label: '平均配速 (往上代表掉速/變慢)',
                         data: chartData,
-                        borderColor: '#f59e0b',     // 換成橘黃色系
+                        borderColor: '#f59e0b',
                         backgroundColor: 'rgba(245, 158, 11, 0.1)',
                         borderWidth: 2,
                         pointBackgroundColor: '#d97706',
@@ -223,8 +230,7 @@
                     maintainAspectRatio: false,
                     scales: {
                         y: { 
-                            title: { display: true, text: '配速 (分鐘/公里)' },
-                            // 反轉 Y 軸？跑步習慣是數字越小(在下方)越快，數字越大(在上方)越慢，此處維持預設即可直觀看出「撞牆(線條往上爬)」
+                            title: { display: true, text: '配速 (分鐘/公里)' }
                         }
                     },
                     plugins: {
@@ -239,6 +245,7 @@
                 }
             });
         }
+
 
 
 
