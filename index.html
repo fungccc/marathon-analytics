@@ -10,7 +10,7 @@
 </head>
 <body class="bg-gray-50 text-gray-800 font-sans p-6">
 
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-7xl mx-auto">
         <header class="mb-8 flex justify-between items-end">
             <div>
                 <h1 class="text-4xl font-bold text-blue-900">Marathon Analytics</h1>
@@ -27,25 +27,45 @@
 
         <div id="dashboard" class="hidden">
             <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4">1. 參賽者輪廓 (Demographics)</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div class="bg-white p-4 rounded shadow">
                     <h3 class="text-center font-bold mb-2">男女比例</h3>
-                    <canvas id="genderChart"></canvas>
+                    <div class="relative h-64"><canvas id="genderChart"></canvas></div>
                 </div>
                 <div class="bg-white p-4 rounded shadow">
                     <h3 class="text-center font-bold mb-2">參賽國家 Top 10</h3>
-                    <canvas id="nationChart"></canvas>
+                    <div class="relative h-64"><canvas id="nationChart"></canvas></div>
                 </div>
             </div>
 
-            <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4">2. 個人戰力查詢 (Runner Search)</h2>
+            <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4 mt-8">2. 豐狂賽事洞察 (Advanced Insights)</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
+                <div class="bg-white p-4 rounded shadow">
+                    <h3 class="text-center font-bold mb-2">完賽時間分佈 (Sub3, Sub4...)</h3>
+                    <div class="relative h-64"><canvas id="finishTimeChart"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded shadow">
+                    <h3 class="text-center font-bold mb-2">各年齡層平均完賽時間</h3>
+                    <div class="relative h-64"><canvas id="ageTimeChart"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded shadow">
+                    <h3 class="text-center font-bold mb-2">配速策略與撞牆期分析</h3>
+                    <div class="relative h-64"><canvas id="wallChart"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded shadow flex flex-col justify-center items-center text-center">
+                    <h3 class="font-bold text-gray-500 mb-2">資料總筆數</h3>
+                    <p id="totalRunners" class="text-5xl font-extrabold text-blue-600">-</p>
+                    <p class="text-sm text-gray-400 mt-2">基於有效成績計算</p>
+                </div>
+            </div>
+
+            <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4">3. 個人戰力查詢 (Runner Search)</h2>
             <div class="bg-white p-6 rounded shadow mb-10">
                 <div class="flex gap-4 mb-4">
                     <input type="text" id="bibInput" placeholder="輸入號碼布 (Bib)" class="border p-2 rounded w-full md:w-1/3">
                     <button onclick="searchRunner()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">查詢</button>
                 </div>
-                <div id="searchResult" class="hidden bg-blue-50 p-4 rounded border border-blue-100">
-                    </div>
+                <div id="searchResult" class="hidden bg-blue-50 p-4 rounded border border-blue-100"></div>
             </div>
         </div>
     </div>
@@ -54,12 +74,24 @@
         let allRunners = [];
         let charts = {};
 
-        // 初始化載入資料
-        function loadData(filename) {
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('dashboard').style.display = 'none';
+        // 輔助函數：將 HH:MM:SS 轉成秒
+        function timeToSec(timeStr) {
+            if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
+            const parts = timeStr.split(':').map(Number);
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            return null;
+        }
 
-            Papa.parse(`./data/${filename}`, {
+        // 輔助函數：將 HH:MM:SS 轉成小時 (帶小數)
+        function timeToHours(timeStr) {
+            let secs = timeToSec(timeStr);
+            return secs ? secs / 3600 : null;
+        }
+
+        window.onload = () => {
+            document.getElementById('loading').style.display = 'block';
+            Papa.parse(`./data/2026_Tokyo.csv`, { 
                 download: true,
                 header: true,
                 skipEmptyLines: true,
@@ -67,50 +99,124 @@
                     allRunners = results.data;
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
+                    document.getElementById('totalRunners').innerText = allRunners.length.toLocaleString();
                     initCharts();
                 },
-                error: function(err) {
-                    alert("載入資料失敗！請確認 /data 資料夾下有 " + filename);
-                }
+                error: function() { alert("載入資料失敗！請確認檔案路徑。"); }
             });
-        }
+        };
 
         function initCharts() {
-            // 計算男女比例
-            let maleCount = allRunners.filter(r => r.Sex && r.Sex.includes('男')).length;
-            let femaleCount = allRunners.filter(r => r.Sex && r.Sex.includes('女')).length;
-
-            // 計算國家分佈
+            let maleCount = 0, femaleCount = 0;
             let nations = {};
+            let timeDist = { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 };
+            let ageGroups = {};
+            let pacingStats = { '完美配速 (後半較快)':0, '平穩完賽 (掉速<10%)':0, '撞牆期 (掉速10%+)':0, '嚴重撞牆 (掉速20%+)':0 };
+
             allRunners.forEach(r => {
-                if(r.Nationality) {
-                    nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
+                // 1. 性別與國家
+                if (r.Sex) {
+                    if (r.Sex.includes('男')) maleCount++;
+                    if (r.Sex.includes('女')) femaleCount++;
+                }
+                if (r.Nationality) nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
+
+                // 2. 完賽時間分佈 (依據晶片時間 Net Time)
+                let netHours = timeToHours(r['Net Time']);
+                if (netHours) {
+                    if (netHours < 3) timeDist['Sub 3']++;
+                    else if (netHours < 4) timeDist['Sub 4']++;
+                    else if (netHours < 5) timeDist['Sub 5']++;
+                    else if (netHours < 6) timeDist['Sub 6']++;
+                    else timeDist['6小時+']++;
+                }
+
+                // 3. 各年齡層平均時間
+                let age = parseInt(r.Age);
+                if (age && netHours) {
+                    let group = Math.floor(age/10)*10 + '代';
+                    if (age < 20) group = '20以下';
+                    if (!ageGroups[group]) ageGroups[group] = {sum:0, count:0};
+                    ageGroups[group].sum += netHours;
+                    ageGroups[group].count++;
+                }
+
+                // 4. 撞牆期與配速分析 (前半馬 vs 後半馬)
+                let halfSec = timeToSec(r['中間点／Halfway Point_Inter']);
+                let fullSec = timeToSec(r['Net Time']);
+                if (halfSec && fullSec) {
+                    let firstHalf = halfSec;
+                    let secondHalf = fullSec - halfSec;
+                    
+                    if (secondHalf < firstHalf) pacingStats['完美配速 (後半較快)']++;
+                    else if (secondHalf > firstHalf * 1.20) pacingStats['嚴重撞牆 (掉速20%+)']++;
+                    else if (secondHalf > firstHalf * 1.10) pacingStats['撞牆期 (掉速10%+)']++;
+                    else pacingStats['平穩完賽 (掉速<10%)']++;
                 }
             });
-            let topNations = Object.entries(nations).sort((a,b) => b[1] - a[1]).slice(0, 10);
 
             // 繪製性別圓餅圖
-            if(charts.gender) charts.gender.destroy();
-            charts.gender = new Chart(document.getElementById('genderChart'), {
+            new Chart(document.getElementById('genderChart'), {
                 type: 'doughnut',
-                data: {
-                    labels: ['男性', '女性'],
-                    datasets: [{ data: [maleCount, femaleCount], backgroundColor: ['#3b82f6', '#ec4899'] }]
-                }
+                data: { labels: ['男性', '女性'], datasets: [{ data: [maleCount, femaleCount], backgroundColor: ['#3b82f6', '#ec4899'] }] },
+                options: { maintainAspectRatio: false }
             });
 
             // 繪製國家長條圖
-            if(charts.nation) charts.nation.destroy();
-            charts.nation = new Chart(document.getElementById('nationChart'), {
+            let topNations = Object.entries(nations).sort((a,b) => b[1] - a[1]).slice(0, 10);
+            new Chart(document.getElementById('nationChart'), {
                 type: 'bar',
-                data: {
-                    labels: topNations.map(n => n[0]),
-                    datasets: [{ label: '人數', data: topNations.map(n => n[1]), backgroundColor: '#10b981' }]
+                data: { labels: topNations.map(n => n[0]), datasets: [{ label: '人數', data: topNations.map(n => n[1]), backgroundColor: '#10b981' }] },
+                options: { maintainAspectRatio: false }
+            });
+
+            // 繪製完賽時間分佈
+            new Chart(document.getElementById('finishTimeChart'), {
+                type: 'bar',
+                data: { 
+                    labels: Object.keys(timeDist), 
+                    datasets: [{ label: '完賽人數', data: Object.values(timeDist), backgroundColor: '#8b5cf6' }] 
+                },
+                options: { maintainAspectRatio: false }
+            });
+
+            // 繪製各年齡層平均完賽時間
+            let ageLabels = Object.keys(ageGroups).sort();
+            let ageAverages = ageLabels.map(g => ageGroups[g].sum / ageGroups[g].count);
+            new Chart(document.getElementById('ageTimeChart'), {
+                type: 'line',
+                data: { 
+                    labels: ageLabels, 
+                    datasets: [{ 
+                        label: '平均完賽時間 (小時)', 
+                        data: ageAverages, 
+                        borderColor: '#f59e0b', 
+                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                        fill: true,
+                        tension: 0.3
+                    }] 
+                },
+                options: { 
+                    maintainAspectRatio: false,
+                    scales: { y: { min: 2.5 } } // Y軸從2.5小時開始更易讀
                 }
+            });
+
+            // 繪製撞牆期分析圓餅圖
+            new Chart(document.getElementById('wallChart'), {
+                type: 'pie',
+                data: { 
+                    labels: Object.keys(pacingStats), 
+                    datasets: [{ 
+                        data: Object.values(pacingStats), 
+                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'] 
+                    }] 
+                },
+                options: { maintainAspectRatio: false }
             });
         }
 
-        // 查詢功能與「動態計算配速」折線圖 (無視 CSV 錯誤 Lap 欄位)
+        // 查詢功能與「動態計算配速」折線圖
         function searchRunner() {
             const bib = document.getElementById('bibInput').value.trim();
             const runner = allRunners.find(r => r.Bib === bib);
@@ -122,7 +228,6 @@
                 return;
             }
 
-            // 1. 基本資料顯示區
             resDiv.innerHTML = `
                 <div class="flex flex-col md:flex-row gap-6">
                     <div class="flex-1">
@@ -141,16 +246,6 @@
             `;
             resDiv.style.display = 'block';
 
-            // 2. 輔助函數：將 HH:MM:SS 或 MM:SS 轉成總秒數
-            function timeToSec(timeStr) {
-                if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
-                const parts = timeStr.split(':').map(Number);
-                if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-                if (parts.length === 2) return parts[0] * 60 + parts[1];
-                return null;
-            }
-
-            // 3. 定義累積距離節點 (使用絕對可靠的 _Inter 累積時間欄位)
             const checkpoints = [
                 { label: '5km', field: '5km_Inter', dist: 5 },
                 { label: '10km', field: '10km_Inter', dist: 10 },
@@ -163,37 +258,27 @@
                 { label: 'Finish', field: 'フィニッシュ／Finish_Inter', dist: 42.195 }
             ];
 
-            const chartLabels = [];
-            const chartData = [];
-            const tooltipText = [];
+            const chartLabels = [], chartData = [], tooltipText = [];
+            let prevSec = 0, prevDist = 0;
 
-            let prevSec = 0;
-            let prevDist = 0;
-
-            // 4. 動態相減計算每一段的真實配速 (免疫 CSV 錯位問題)
             checkpoints.forEach(pt => {
                 const currentSec = timeToSec(runner[pt.field]);
-                
-                // 產生 X 軸標籤 (例如 "35-40km" 或 "40-Finish")
                 const startLabel = prevDist === 0 ? '0' : prevDist;
                 const endLabel = pt.dist === 42.195 ? 'Finish' : pt.dist + 'km';
                 const segLabel = `${startLabel}-${endLabel}`;
 
                 if (currentSec !== null) {
-                    const lapSec = currentSec - prevSec;     // 該段花費秒數
-                    const lapDist = pt.dist - prevDist;      // 該段實際距離
-
-                    const paceSecPerKm = lapSec / lapDist;   // 配速 (秒/公里)
+                    const lapSec = currentSec - prevSec;
+                    const lapDist = pt.dist - prevDist;
+                    const paceSecPerKm = lapSec / lapDist;
                     
-                    chartData.push(paceSecPerKm / 60);       // Y軸畫圖用 (小數點分鐘)
+                    chartData.push(paceSecPerKm / 60);
                     
-                    // Tooltip 顯示用 (轉回 mm:ss 格式)
                     const paceM = Math.floor(paceSecPerKm / 60);
                     const paceS = Math.round(paceSecPerKm % 60).toString().padStart(2, '0');
                     tooltipText.push(`${paceM}:${paceS} /km`);
                     chartLabels.push(segLabel);
 
-                    // 紀錄為前一個節點，給下一段相減用
                     prevSec = currentSec;
                     prevDist = pt.dist;
                 } else {
@@ -203,18 +288,14 @@
                 }
             });
 
-            // 5. 繪製配速折線圖
-            if (window.lapChartInstance) {
-                window.lapChartInstance.destroy();
-            }
-
+            if (window.lapChartInstance) window.lapChartInstance.destroy();
             const ctx = document.getElementById('lapChart').getContext('2d');
             window.lapChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
                     datasets: [{
-                        label: '平均配速 (往上代表掉速/變慢)',
+                        label: '平均配速 (往上代表掉速)',
                         data: chartData,
                         borderColor: '#f59e0b',
                         backgroundColor: 'rgba(245, 158, 11, 0.1)',
@@ -226,33 +307,12 @@
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { 
-                            title: { display: true, text: '配速 (分鐘/公里)' }
-                        }
-                    },
-                    plugins: {
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    return ` 配速: ${tooltipText[context.dataIndex]}`;
-                                }
-                            }
-                        }
-                    }
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { title: { display: true, text: '配速 (分鐘/公里)' } } },
+                    plugins: { tooltip: { callbacks: { label: function(c) { return ` 配速: ${tooltipText[c.dataIndex]}`; } } } }
                 }
             });
         }
-
-
-
-
-
-        // 頁面載入時啟動
-        window.onload = () => loadData('2026_Tokyo.csv');
-
     </script>
 </body>
 </html>
