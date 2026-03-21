@@ -216,7 +216,7 @@
             });
         }
 
-        // 查詢功能與「動態計算配速」折線圖
+        // 查詢功能與「PR戰力分析 + 動態配速」雙圖表
         function searchRunner() {
             const bib = document.getElementById('bibInput').value.trim();
             const runner = allRunners.find(r => r.Bib === bib);
@@ -228,24 +228,161 @@
                 return;
             }
 
+            // --- 1. 計算 PR 分位數戰力值 ---
+            let runnerNetSec = timeToSec(runner['Net Time']);
+            let beatOverall = 0, totalOverall = 0;
+            let beatGender = 0, totalGender = 0;
+            let beatAge = 0, totalAge = 0;
+
+            let runnerAge = parseInt(runner.Age);
+            let runnerAgeGroup = runnerAge ? (Math.floor(runnerAge/10)*10 + '代') : '未知';
+            if (runnerAge < 20) runnerAgeGroup = '20以下';
+
+            // 建立全場有效成績陣列 (供畫 ECDF 曲線使用)
+            let allValidSecs = [];
+
+            if (runnerNetSec) {
+                allRunners.forEach(r => {
+                    let sec = timeToSec(r['Net Time']);
+                    if (sec) {
+                        allValidSecs.push(sec);
+                        totalOverall++;
+                        if (sec > runnerNetSec) beatOverall++; // 耗時較長代表被擊敗
+
+                        if (r.Sex === runner.Sex) {
+                            totalGender++;
+                            if (sec > runnerNetSec) beatGender++;
+                        }
+
+                        let rAge = parseInt(r.Age);
+                        let g = rAge ? (Math.floor(rAge/10)*10 + '代') : '未知';
+                        if (rAge < 20) g = '20以下';
+                        if (g === runnerAgeGroup) {
+                            totalAge++;
+                            if (sec > runnerNetSec) beatAge++;
+                        }
+                    }
+                });
+            }
+
+            let prOverall = totalOverall ? ((beatOverall / totalOverall) * 100).toFixed(1) : '-';
+            let prGender = totalGender ? ((beatGender / totalGender) * 100).toFixed(1) : '-';
+            let prAge = totalAge ? ((beatAge / totalAge) * 100).toFixed(1) : '-';
+
+            // --- 2. 渲染前端介面 (基本資料 + PR 面板 + 雙畫布) ---
             resDiv.innerHTML = `
-                <div class="flex flex-col md:flex-row gap-6">
-                    <div class="flex-1">
-                        <h3 class="text-2xl font-bold mb-4 text-blue-900">${runner.Name || '未知姓名'}</h3>
-                        <p class="mb-2"><strong>總排名：</strong> ${runner['Overall Place'] || '-'}</p>
-                        <p class="mb-2"><strong>大會時間 (Gross)：</strong> ${runner['Gross Time'] || '-'}</p>
-                        <p class="mb-2"><strong>晶片時間 (Net)：</strong> ${runner['Net Time'] || '-'}</p>
-                        <p class="mb-2"><strong>組別：</strong> ${runner['Race Category'] || '-'}</p>
-                        <p class="mb-2"><strong>年齡/性別：</strong> ${runner.Age || '-'} / ${runner.Sex || '-'}</p>
-                        <p class="mb-2"><strong>國籍：</strong> ${runner.Nationality || '-'}</p>
+                <div class="flex flex-col gap-6">
+                    <div class="flex flex-col md:flex-row gap-6">
+                        <div class="flex-1 bg-white p-4 rounded shadow-sm border-t-4 border-blue-600">
+                            <h3 class="text-2xl font-bold mb-4 text-blue-900">${runner.Name || '未知姓名'}</h3>
+                            <p class="mb-1"><strong>大會時間 (Gross)：</strong> ${runner['Gross Time'] || '-'}</p>
+                            <p class="mb-1"><strong>晶片時間 (Net)：</strong> <span class="text-lg font-bold text-green-600">${runner['Net Time'] || '-'}</span></p>
+                            <p class="mb-1"><strong>總排名：</strong> ${runner['Overall Place'] || '-'}</p>
+                            <p class="mb-1"><strong>組別/國籍：</strong> ${runner['Race Category'] || '-'} / ${runner.Nationality || '-'}</p>
+                            <p class="mb-1"><strong>年齡/性別：</strong> ${runner.Age || '-'} 歲 / ${runner.Sex || '-'}</p>
+                        </div>
+                        
+                        <div class="flex-1 bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 rounded shadow-sm border-t-4 border-yellow-500">
+                            <h3 class="text-xl font-bold mb-4 text-yellow-800">🏆 豐狂戰力分析 (PR 值)</h3>
+                            <div class="mb-3">
+                                <span class="text-gray-600 text-sm">全場擊敗比例</span>
+                                <div class="text-3xl font-black text-yellow-600">PR ${prOverall} <span class="text-sm font-normal text-gray-500">(${beatOverall}/${totalOverall}人)</span></div>
+                            </div>
+                            <div class="flex justify-between mt-4 pt-4 border-t border-yellow-200">
+                                <div>
+                                    <span class="text-gray-500 text-xs block">同性別擊敗</span>
+                                    <span class="font-bold text-lg text-gray-700">${prGender}%</span>
+                                </div>
+                                <div>
+                                    <span class="text-gray-500 text-xs block">同年齡層擊敗</span>
+                                    <span class="font-bold text-lg text-gray-700">${prAge}%</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="flex-1 relative min-h-[300px] bg-white p-2 rounded shadow-sm">
-                        <canvas id="lapChart"></canvas>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-white p-2 rounded shadow-sm min-h-[300px] relative">
+                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">完賽時間累積分布圖 (你落在哪裡？)</h4>
+                            <canvas id="prChart"></canvas>
+                        </div>
+                        <div class="bg-white p-2 rounded shadow-sm min-h-[300px] relative">
+                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">每公里平均配速 (撞牆期檢測)</h4>
+                            <canvas id="lapChart"></canvas>
+                        </div>
                     </div>
                 </div>
             `;
             resDiv.style.display = 'block';
 
+            // --- 3. 繪製 PR 分位數曲線圖 (ECDF) ---
+            if (window.prChartInstance) window.prChartInstance.destroy();
+            if (runnerNetSec && allValidSecs.length > 0) {
+                // 將所有時間從小到大排序以計算累積分布
+                allValidSecs.sort((a, b) => a - b);
+                
+                let ecdfLabels = [];
+                let ecdfData = [];
+                let currentIdx = 0;
+                let totalRunnersCount = allValidSecs.length;
+
+                // 每 5 分鐘 (300秒) 取一個點，從 2 小時畫到 7 小時
+                for (let sec = 7200; sec <= 25200; sec += 300) {
+                    while (currentIdx < totalRunnersCount && allValidSecs[currentIdx] <= sec) {
+                        currentIdx++;
+                    }
+                    // 計算在該時間完賽，能擊敗多少比例的人
+                    let beatPercent = ((totalRunnersCount - currentIdx) / totalRunnersCount) * 100;
+                    
+                    let h = Math.floor(sec / 3600);
+                    let m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+                    ecdfLabels.push(`${h}:${m}`);
+                    ecdfData.push(beatPercent);
+                }
+
+                // 準備使用者落點的資料 (Scatter Data)
+                let userH = Math.floor(runnerNetSec / 3600);
+                let userM = Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0');
+                
+                const ctxPr = document.getElementById('prChart').getContext('2d');
+                window.prChartInstance = new Chart(ctxPr, {
+                    type: 'line',
+                    data: {
+                        labels: ecdfLabels,
+                        datasets: [
+                            {
+                                label: '全場累積分布曲線',
+                                data: ecdfData,
+                                borderColor: '#93c5fd',
+                                backgroundColor: 'rgba(147, 197, 253, 0.2)',
+                                fill: true,
+                                pointRadius: 0, // 隱藏曲線上的點，讓線條乾淨
+                                tension: 0.4
+                            },
+                            {
+                                type: 'scatter',
+                                label: '你的戰力落點',
+                                data: [{ x: `${userH}:${userM}`, y: parseFloat(prOverall) }],
+                                backgroundColor: '#ef4444',
+                                pointRadius: 8,
+                                pointHoverRadius: 10,
+                                pointBorderColor: '#fff',
+                                pointBorderWidth: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { 
+                            y: { title: { display: true, text: '擊敗對手比例 (%)' }, max: 100, min: 0 },
+                            x: { title: { display: true, text: '完賽時間' } }
+                        }
+                    }
+                });
+            }
+
+            // --- 4. 繪製精準配速折線圖 (Lap Chart) ---
+            if (window.lapChartInstance) window.lapChartInstance.destroy();
             const checkpoints = [
                 { label: '5km', field: '5km_Inter', dist: 5 },
                 { label: '10km', field: '10km_Inter', dist: 10 },
@@ -288,9 +425,8 @@
                 }
             });
 
-            if (window.lapChartInstance) window.lapChartInstance.destroy();
-            const ctx = document.getElementById('lapChart').getContext('2d');
-            window.lapChartInstance = new Chart(ctx, {
+            const ctxLap = document.getElementById('lapChart').getContext('2d');
+            window.lapChartInstance = new Chart(ctxLap, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
@@ -313,6 +449,7 @@
                 }
             });
         }
+
     </script>
 </body>
 </html>
