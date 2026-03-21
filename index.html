@@ -71,10 +71,9 @@
     </div>
 
     <script>
-        let allRunners = [];
+let allRunners = [];
         let charts = {};
 
-        // 輔助函數：將 HH:MM:SS 轉成秒
         function timeToSec(timeStr) {
             if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
             const parts = timeStr.split(':').map(Number);
@@ -83,7 +82,6 @@
             return null;
         }
 
-        // 輔助函數：將 HH:MM:SS 轉成小時 (帶小數)
         function timeToHours(timeStr) {
             let secs = timeToSec(timeStr);
             return secs ? secs / 3600 : null;
@@ -109,118 +107,120 @@
         function initCharts() {
             let maleCount = 0, femaleCount = 0;
             let nations = {};
-            let timeDist = { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 };
-            let ageGroups = {};
-            let pacingStats = { '完美配速 (後半較快)':0, '平穩完賽 (掉速<10%)':0, '撞牆期 (掉速10%+)':0, '嚴重撞牆 (掉速20%+)':0 };
+            
+            // 🌟 1. 建立男女分開的資料容器
+            let timeDist = { '男': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '女': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 } };
+            let ageGroups = { '男': {}, '女': {} };
+            let pacingStats = { '男': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '女': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 } };
 
             allRunners.forEach(r => {
-                // 1. 性別與國家
-                if (r.Sex) {
-                    if (r.Sex.includes('男')) maleCount++;
-                    if (r.Sex.includes('女')) femaleCount++;
-                }
+                let gender = '未知';
+                if (r.Sex && r.Sex.includes('男')) { gender = '男'; maleCount++; }
+                else if (r.Sex && r.Sex.includes('女')) { gender = '女'; femaleCount++; }
+
                 if (r.Nationality) nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
 
-                // 2. 完賽時間分佈 (依據晶片時間 Net Time)
-                let netHours = timeToHours(r['Net Time']);
-                if (netHours) {
-                    if (netHours < 3) timeDist['Sub 3']++;
-                    else if (netHours < 4) timeDist['Sub 4']++;
-                    else if (netHours < 5) timeDist['Sub 5']++;
-                    else if (netHours < 6) timeDist['Sub 6']++;
-                    else timeDist['6小時+']++;
-                }
+                if (gender === '男' || gender === '女') {
+                    // 完賽時間
+                    let netHours = timeToHours(r['Net Time']);
+                    if (netHours) {
+                        if (netHours < 3) timeDist[gender]['Sub 3']++;
+                        else if (netHours < 4) timeDist[gender]['Sub 4']++;
+                        else if (netHours < 5) timeDist[gender]['Sub 5']++;
+                        else if (netHours < 6) timeDist[gender]['Sub 6']++;
+                        else timeDist[gender]['6小時+']++;
+                    }
 
-                // 3. 各年齡層平均時間
-                let age = parseInt(r.Age);
-                if (age && netHours) {
-                    let group = Math.floor(age/10)*10 + '代';
-                    if (age < 20) group = '20以下';
-                    if (!ageGroups[group]) ageGroups[group] = {sum:0, count:0};
-                    ageGroups[group].sum += netHours;
-                    ageGroups[group].count++;
-                }
+                    // 年齡層
+                    let age = parseInt(r.Age);
+                    if (age && netHours) {
+                        let group = Math.floor(age/10)*10 + '代';
+                        if (age < 20) group = '20以下';
+                        if (!ageGroups[gender][group]) ageGroups[gender][group] = {sum:0, count:0};
+                        ageGroups[gender][group].sum += netHours;
+                        ageGroups[gender][group].count++;
+                    }
 
-                // 4. 撞牆期與配速分析 (前半馬 vs 後半馬)
-                let halfSec = timeToSec(r['中間点／Halfway Point_Inter']);
-                let fullSec = timeToSec(r['Net Time']);
-                if (halfSec && fullSec) {
-                    let firstHalf = halfSec;
-                    let secondHalf = fullSec - halfSec;
-                    
-                    if (secondHalf < firstHalf) pacingStats['完美配速 (後半較快)']++;
-                    else if (secondHalf > firstHalf * 1.20) pacingStats['嚴重撞牆 (掉速20%+)']++;
-                    else if (secondHalf > firstHalf * 1.10) pacingStats['撞牆期 (掉速10%+)']++;
-                    else pacingStats['平穩完賽 (掉速<10%)']++;
+                    // 撞牆期
+                    let halfSec = timeToSec(r['中間点／Halfway Point_Inter']);
+                    let fullSec = timeToSec(r['Net Time']);
+                    if (halfSec && fullSec) {
+                        let firstHalf = halfSec;
+                        let secondHalf = fullSec - halfSec;
+                        if (secondHalf < firstHalf) pacingStats[gender]['完美配速']++;
+                        else if (secondHalf > firstHalf * 1.20) pacingStats[gender]['嚴重撞牆']++;
+                        else if (secondHalf > firstHalf * 1.10) pacingStats[gender]['撞牆期']++;
+                        else pacingStats[gender]['平穩完賽']++;
+                    }
                 }
             });
 
-            // 繪製性別圓餅圖
-            new Chart(document.getElementById('genderChart'), {
+            // 圖表共同配色設定
+            const maleColor = '#3b82f6';   // 藍色
+            const femaleColor = '#ec4899'; // 粉色
+
+            if(charts.gender) charts.gender.destroy();
+            charts.gender = new Chart(document.getElementById('genderChart'), {
                 type: 'doughnut',
-                data: { labels: ['男性', '女性'], datasets: [{ data: [maleCount, femaleCount], backgroundColor: ['#3b82f6', '#ec4899'] }] },
+                data: { labels: ['男性', '女性'], datasets: [{ data: [maleCount, femaleCount], backgroundColor: [maleColor, femaleColor] }] },
                 options: { maintainAspectRatio: false }
             });
 
-            // 繪製國家長條圖
             let topNations = Object.entries(nations).sort((a,b) => b[1] - a[1]).slice(0, 10);
-            new Chart(document.getElementById('nationChart'), {
+            if(charts.nation) charts.nation.destroy();
+            charts.nation = new Chart(document.getElementById('nationChart'), {
                 type: 'bar',
                 data: { labels: topNations.map(n => n[0]), datasets: [{ label: '人數', data: topNations.map(n => n[1]), backgroundColor: '#10b981' }] },
-                options: { 
-                    maintainAspectRatio: false,
-                    indexAxis: 'y',  
-                    plugins: { legend: { display: false } } 
-                }
+                options: { maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
             });
 
-            // 繪製完賽時間分佈
-            new Chart(document.getElementById('finishTimeChart'), {
+            // 🌟 2. 男女對比：完賽時間分佈
+            if(charts.finish) charts.finish.destroy();
+            charts.finish = new Chart(document.getElementById('finishTimeChart'), {
                 type: 'bar',
                 data: { 
-                    labels: Object.keys(timeDist), 
-                    datasets: [{ label: '完賽人數', data: Object.values(timeDist), backgroundColor: '#8b5cf6' }] 
+                    labels: Object.keys(timeDist['男']), 
+                    datasets: [
+                        { label: '男性', data: Object.values(timeDist['男']), backgroundColor: maleColor },
+                        { label: '女性', data: Object.values(timeDist['女']), backgroundColor: femaleColor }
+                    ] 
                 },
                 options: { maintainAspectRatio: false }
             });
 
-            // 繪製各年齡層平均完賽時間
-            let ageLabels = Object.keys(ageGroups).sort();
-            let ageAverages = ageLabels.map(g => ageGroups[g].sum / ageGroups[g].count);
-            new Chart(document.getElementById('ageTimeChart'), {
+            // 🌟 3. 男女對比：各年齡層平均完賽時間
+            let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男']), ...Object.keys(ageGroups['女'])])).sort();
+            let maleAverages = ageLabels.map(g => ageGroups['男'][g] ? (ageGroups['男'][g].sum / ageGroups['男'][g].count) : null);
+            let femaleAverages = ageLabels.map(g => ageGroups['女'][g] ? (ageGroups['女'][g].sum / ageGroups['女'][g].count) : null);
+            
+            if(charts.age) charts.age.destroy();
+            charts.age = new Chart(document.getElementById('ageTimeChart'), {
                 type: 'line',
                 data: { 
                     labels: ageLabels, 
-                    datasets: [{ 
-                        label: '平均完賽時間 (小時)', 
-                        data: ageAverages, 
-                        borderColor: '#f59e0b', 
-                        backgroundColor: 'rgba(245, 158, 11, 0.2)',
-                        fill: true,
-                        tension: 0.3
-                    }] 
+                    datasets: [
+                        { label: '男性平均 (小時)', data: maleAverages, borderColor: maleColor, tension: 0.3, spanGaps: true },
+                        { label: '女性平均 (小時)', data: femaleAverages, borderColor: femaleColor, tension: 0.3, spanGaps: true }
+                    ] 
                 },
-                options: { 
-                    maintainAspectRatio: false,
-                    scales: { y: { min: 2.5 } } // Y軸從2.5小時開始更易讀
-                }
+                options: { maintainAspectRatio: false, scales: { y: { min: 2.5 } } }
             });
 
-            // 繪製撞牆期分析圓餅圖
-            new Chart(document.getElementById('wallChart'), {
-                type: 'pie',
+            // 🌟 4. 男女對比：配速策略與撞牆期 (改為分組長條圖)
+            if(charts.wall) charts.wall.destroy();
+            charts.wall = new Chart(document.getElementById('wallChart'), {
+                type: 'bar',
                 data: { 
-                    labels: Object.keys(pacingStats), 
-                    datasets: [{ 
-                        data: Object.values(pacingStats), 
-                        backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'] 
-                    }] 
+                    labels: Object.keys(pacingStats['男']), 
+                    datasets: [
+                        { label: '男性', data: Object.values(pacingStats['男']), backgroundColor: maleColor },
+                        { label: '女性', data: Object.values(pacingStats['女']), backgroundColor: femaleColor }
+                    ] 
                 },
                 options: { maintainAspectRatio: false }
             });
         }
 
-        // 查詢功能與「PR戰力分析 + 動態配速」雙圖表
         function searchRunner() {
             const bib = document.getElementById('bibInput').value.trim();
             const runner = allRunners.find(r => r.Bib === bib);
@@ -232,17 +232,12 @@
                 return;
             }
 
-            // --- 1. 計算 PR 分位數戰力值 ---
             let runnerNetSec = timeToSec(runner['Net Time']);
-            let beatOverall = 0, totalOverall = 0;
-            let beatGender = 0, totalGender = 0;
-            let beatAge = 0, totalAge = 0;
-
+            let beatOverall = 0, totalOverall = 0, beatGender = 0, totalGender = 0, beatAge = 0, totalAge = 0;
             let runnerAge = parseInt(runner.Age);
             let runnerAgeGroup = runnerAge ? (Math.floor(runnerAge/10)*10 + '代') : '未知';
             if (runnerAge < 20) runnerAgeGroup = '20以下';
 
-            // 建立全場有效成績陣列 (供畫 ECDF 曲線使用)
             let allValidSecs = [];
 
             if (runnerNetSec) {
@@ -251,7 +246,7 @@
                     if (sec) {
                         allValidSecs.push(sec);
                         totalOverall++;
-                        if (sec > runnerNetSec) beatOverall++; // 耗時較長代表被擊敗
+                        if (sec > runnerNetSec) beatOverall++;
 
                         if (r.Sex === runner.Sex) {
                             totalGender++;
@@ -273,7 +268,6 @@
             let prGender = totalGender ? ((beatGender / totalGender) * 100).toFixed(1) : '-';
             let prAge = totalAge ? ((beatAge / totalAge) * 100).toFixed(1) : '-';
 
-            // --- 2. 渲染前端介面 (基本資料 + PR 面板 + 雙畫布) ---
             resDiv.innerHTML = `
                 <div class="flex flex-col gap-6">
                     <div class="flex flex-col md:flex-row gap-6">
@@ -287,7 +281,7 @@
                         </div>
                         
                         <div class="flex-1 bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 rounded shadow-sm border-t-4 border-yellow-500">
-                            <h3 class="text-xl font-bold mb-4 text-yellow-800">🏆 豐狂戰力分析 (PR 值)</h3>
+                            <h3 class="text-xl font-bold mb-4 text-yellow-800">🏆 戰力分析 (PR 值)</h3>
                             <div class="mb-3">
                                 <span class="text-gray-600 text-sm">全場擊敗比例</span>
                                 <div class="text-3xl font-black text-yellow-600">PR ${prOverall} <span class="text-sm font-normal text-gray-500">(${beatOverall}/${totalOverall}人)</span></div>
@@ -307,167 +301,122 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                         <div class="bg-white p-4 rounded shadow-sm">
-                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">完賽時間累積分布圖 (你落在哪裡？)</h4>
-                            <div class="relative h-64 md:h-80 w-full">
-                                <canvas id="prChart"></canvas>
-                            </div>
+                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">完賽時間累積分布圖</h4>
+                            <div class="relative h-64 md:h-80 w-full"><canvas id="prChart"></canvas></div>
                         </div>
                         <div class="bg-white p-4 rounded shadow-sm">
-                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">每公里平均配速 (撞牆期檢測)</h4>
-                            <div class="relative h-64 md:h-80 w-full">
-                                <canvas id="lapChart"></canvas>
-                            </div>
+                            <h4 class="text-center font-bold text-gray-600 text-sm mb-2">每公里配速 (智慧撞牆檢測)</h4>
+                            <div class="relative h-64 md:h-80 w-full"><canvas id="lapChart"></canvas></div>
                         </div>
                     </div>
                 </div>
+            `;
+            resDiv.style.display = 'block';
 
-            // --- 3. 繪製 PR 分位數曲線圖 (ECDF) ---
             if (window.prChartInstance) window.prChartInstance.destroy();
             if (runnerNetSec && allValidSecs.length > 0) {
-                // 將所有時間從小到大排序以計算累積分布
                 allValidSecs.sort((a, b) => a - b);
-                
-                let ecdfLabels = [];
-                let ecdfData = [];
-                let currentIdx = 0;
-                let totalRunnersCount = allValidSecs.length;
+                let ecdfLabels = [], ecdfData = [], currentIdx = 0, totalRunnersCount = allValidSecs.length;
 
-                // 每 5 分鐘 (300秒) 取一個點，從 2 小時畫到 7 小時
                 for (let sec = 7200; sec <= 25200; sec += 300) {
-                    while (currentIdx < totalRunnersCount && allValidSecs[currentIdx] <= sec) {
-                        currentIdx++;
-                    }
-                    // 計算在該時間完賽，能擊敗多少比例的人
-                    let beatPercent = ((totalRunnersCount - currentIdx) / totalRunnersCount) * 100;
-                    
-                    let h = Math.floor(sec / 3600);
-                    let m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
-                    ecdfLabels.push(`${h}:${m}`);
-                    ecdfData.push(beatPercent);
+                    while (currentIdx < totalRunnersCount && allValidSecs[currentIdx] <= sec) currentIdx++;
+                    ecdfLabels.push(`${Math.floor(sec / 3600)}:${Math.floor((sec % 3600) / 60).toString().padStart(2, '0')}`);
+                    ecdfData.push(((totalRunnersCount - currentIdx) / totalRunnersCount) * 100);
                 }
 
-                // 準備使用者落點的資料 (Scatter Data)
-                let userH = Math.floor(runnerNetSec / 3600);
-                let userM = Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0');
-                
                 const ctxPr = document.getElementById('prChart').getContext('2d');
                 window.prChartInstance = new Chart(ctxPr, {
                     type: 'line',
                     data: {
                         labels: ecdfLabels,
                         datasets: [
-                            {
-                                label: '全場累積分布曲線',
-                                data: ecdfData,
-                                borderColor: '#93c5fd',
-                                backgroundColor: 'rgba(147, 197, 253, 0.2)',
-                                fill: true,
-                                pointRadius: 0, // 隱藏曲線上的點，讓線條乾淨
-                                tension: 0.4
-                            },
-                            {
-                                type: 'scatter',
-                                label: '你的戰力落點',
-                                data: [{ x: `${userH}:${userM}`, y: parseFloat(prOverall) }],
-                                backgroundColor: '#ef4444',
-                                pointRadius: 8,
-                                pointHoverRadius: 10,
-                                pointBorderColor: '#fff',
-                                pointBorderWidth: 2
-                            }
+                            { label: '累積分布', data: ecdfData, borderColor: '#93c5fd', backgroundColor: 'rgba(147, 197, 253, 0.2)', fill: true, pointRadius: 0, tension: 0.4 },
+                            { type: 'scatter', label: '你的落點', data: [{ x: `${Math.floor(runnerNetSec / 3600)}:${Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0')}`, y: parseFloat(prOverall) }], backgroundColor: '#ef4444', pointRadius: 8, pointBorderColor: '#fff', pointBorderWidth: 2 }
                         ]
                     },
-                    options: {
-                        responsive: true, maintainAspectRatio: false,
-                        scales: { 
-                            y: { title: { display: true, text: '擊敗對手比例 (%)' }, max: 100, min: 0 },
-                            x: { title: { display: true, text: '完賽時間' } }
-                        }
-                    }
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100, min: 0 } } }
                 });
             }
 
-            // --- 4. 繪製精準配速折線圖 (Lap Chart) ---
+            // 🌟 5. 進階配速圖：計算全局平均並標示撞牆期
             if (window.lapChartInstance) window.lapChartInstance.destroy();
             const checkpoints = [
-                { label: '5km', field: '5km_Inter', dist: 5 },
-                { label: '10km', field: '10km_Inter', dist: 10 },
-                { label: '15km', field: '15km_Inter', dist: 15 },
-                { label: '20km', field: '20km_Inter', dist: 20 },
-                { label: '25km', field: '25km_Inter', dist: 25 },
-                { label: '30km', field: '30km_Inter', dist: 30 },
-                { label: '35km', field: '35km_Inter', dist: 35 },
-                { label: '40km', field: '40km_Inter', dist: 40 },
+                { label: '5km', field: '5km_Inter', dist: 5 }, { label: '10km', field: '10km_Inter', dist: 10 },
+                { label: '15km', field: '15km_Inter', dist: 15 }, { label: '20km', field: '20km_Inter', dist: 20 },
+                { label: '25km', field: '25km_Inter', dist: 25 }, { label: '30km', field: '30km_Inter', dist: 30 },
+                { label: '35km', field: '35km_Inter', dist: 35 }, { label: '40km', field: '40km_Inter', dist: 40 },
                 { label: 'Finish', field: 'フィニッシュ／Finish_Inter', dist: 42.195 }
             ];
 
             const chartLabels = [], chartData = [], tooltipText = [];
             let prevSec = 0, prevDist = 0;
+            
+            // 計算全局平均配速 (基準線)
+            const avgPaceSec = runnerNetSec ? (runnerNetSec / 42.195) : null;
+            const avgPaceMin = avgPaceSec ? (avgPaceSec / 60) : null;
+            const avgPaceStr = avgPaceSec ? `${Math.floor(avgPaceSec / 60)}:${Math.round(avgPaceSec % 60).toString().padStart(2, '0')}` : '';
 
             checkpoints.forEach(pt => {
                 const currentSec = timeToSec(runner[pt.field]);
-                const startLabel = prevDist === 0 ? '0' : prevDist;
-                const endLabel = pt.dist === 42.195 ? 'Finish' : pt.dist + 'km';
-                const segLabel = `${startLabel}-${endLabel}`;
+                const segLabel = `${prevDist === 0 ? '0' : prevDist}-${pt.dist === 42.195 ? 'Finish' : pt.dist + 'km'}`;
 
                 if (currentSec !== null) {
-                    const lapSec = currentSec - prevSec;
-                    const lapDist = pt.dist - prevDist;
-                    const paceSecPerKm = lapSec / lapDist;
-                    
+                    const paceSecPerKm = (currentSec - prevSec) / (pt.dist - prevDist);
                     chartData.push(paceSecPerKm / 60);
-                    
-                    const paceM = Math.floor(paceSecPerKm / 60);
-                    const paceS = Math.round(paceSecPerKm % 60).toString().padStart(2, '0');
-                    tooltipText.push(`${paceM}:${paceS} /km`);
+                    tooltipText.push(`${Math.floor(paceSecPerKm / 60)}:${Math.round(paceSecPerKm % 60).toString().padStart(2, '0')} /km`);
                     chartLabels.push(segLabel);
-
-                    prevSec = currentSec;
-                    prevDist = pt.dist;
+                    prevSec = currentSec; prevDist = pt.dist;
                 } else {
-                    chartData.push(null);
-                    tooltipText.push('無資料');
-                    chartLabels.push(segLabel);
+                    chartData.push(null); tooltipText.push('無資料'); chartLabels.push(segLabel);
                 }
             });
+
+            // 動態顏色函數：慢於平均10%顯示紅色
+            const getPointColor = (ctx) => {
+                if (avgPaceMin && ctx.raw > avgPaceMin * 1.1) return '#ef4444'; // 撞牆紅
+                return '#f59e0b'; // 正常橘
+            };
 
             const ctxLap = document.getElementById('lapChart').getContext('2d');
             window.lapChartInstance = new Chart(ctxLap, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
-                    datasets: [{
-                        label: '平均配速 (往上代表掉速)',
-                        data: chartData,
-                        borderColor: '#f59e0b',
-                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                        borderWidth: 2,
-                        pointBackgroundColor: '#d97706',
-                        pointRadius: 5,
-                        fill: true,
-                        tension: 0.2
-                    }]
+                    datasets: [
+                        {
+                            label: '該段配速 (紅色為掉速>10%)',
+                            data: chartData,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            borderWidth: 2,
+                            pointBackgroundColor: function(context) { return getPointColor(context); },
+                            pointRadius: 6,
+                            fill: true,
+                            tension: 0.2
+                        },
+                        {
+                            label: `全局平均配速 (${avgPaceStr} /km)`,
+                            data: Array(chartLabels.length).fill(avgPaceMin),
+                            borderColor: '#3b82f6',
+                            borderDash: [5, 5], // 虛線效果
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0
+                        }
+                    ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     scales: { 
                         y: { 
                             title: { display: true, text: '配速 (分:秒/公里)' },
-                            ticks: {
-                                callback: function(value) {
-                                    // 將小數點分鐘 (例如 4.8) 轉回 4:48
-                                    let m = Math.floor(value);
-                                    let s = Math.round((value - m) * 60).toString().padStart(2, '0');
-                                    return m + ':' + s;
-                                }
-                            }
+                            ticks: { callback: function(val) { return Math.floor(val) + ':' + Math.round((val % 1) * 60).toString().padStart(2, '0'); } }
                         } 
                     },
-                    plugins: { tooltip: { callbacks: { label: function(c) { return ` 配速: ${tooltipText[c.dataIndex]}`; } } } }
+                    plugins: { tooltip: { callbacks: { label: function(c) { return c.datasetIndex === 0 ? ` 實際: ${tooltipText[c.dataIndex]}` : ` 基準: ${avgPaceStr} /km`; } } } }
                 }
             });
-        }
-
-    </script>
+        }    </script>
 </body>
 </html>
