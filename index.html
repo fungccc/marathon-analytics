@@ -305,19 +305,21 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="bg-white p-2 rounded shadow-sm min-h-[300px] relative">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div class="bg-white p-4 rounded shadow-sm">
                             <h4 class="text-center font-bold text-gray-600 text-sm mb-2">完賽時間累積分布圖 (你落在哪裡？)</h4>
-                            <canvas id="prChart"></canvas>
+                            <div class="relative h-64 md:h-80 w-full">
+                                <canvas id="prChart"></canvas>
+                            </div>
                         </div>
-                        <div class="bg-white p-2 rounded shadow-sm min-h-[300px] relative">
+                        <div class="bg-white p-4 rounded shadow-sm">
                             <h4 class="text-center font-bold text-gray-600 text-sm mb-2">每公里平均配速 (撞牆期檢測)</h4>
-                            <canvas id="lapChart"></canvas>
+                            <div class="relative h-64 md:h-80 w-full">
+                                <canvas id="lapChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </div>
-            `;
-            resDiv.style.display = 'block';
 
             // --- 3. 繪製 PR 分位數曲線圖 (ECDF) ---
             if (window.prChartInstance) window.prChartInstance.destroy();
