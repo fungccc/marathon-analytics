@@ -34,18 +34,18 @@
                     <div class="relative h-64"><canvas id="genderChart"></canvas></div>
                 </div>
                 <div class="bg-white p-4 rounded shadow">
-                    <h3 class="text-center font-bold text-gray-800">參賽國家 Top 10</h3>
-                    <p class="text-xs text-center text-gray-500 mb-2">說明：參與人數最多的前十個國家或地區。</p>
+                    <h3 class="text-center font-bold text-gray-800">參賽國家 Top 10 (含性別分布)</h3>
+                    <p class="text-xs text-center text-gray-500 mb-2">說明：參與人數最多的前十個國家或地區，並疊加性別比例。</p>
                     <div class="relative h-64"><canvas id="nationChart"></canvas></div>
                 </div>
             </div>
 
             <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4 mt-8">2. 豐狂賽事洞察 (Advanced Insights)</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                <div class="bg-white p-4 rounded shadow">
+                <div class="bg-white p-4 rounded shadow group">
                     <h3 class="text-center font-bold text-gray-800">完賽時間分佈</h3>
-                    <p class="text-xs text-center text-gray-500 mb-2">說明：Sub 3 代表三小時內完賽，觀察多數跑者實力落點。</p>
-                    <div class="relative h-64"><canvas id="finishTimeChart"></canvas></div>
+                    <p class="text-xs text-center text-gray-500 mb-2">說明：Sub 3 代表三小時內完賽。👉 <span class="text-blue-600 font-bold">點擊圖表柱狀圖，可展開 10 分鐘區間的詳細下鑽數據！</span></p>
+                    <div class="relative h-64"><canvas id="finishTimeChart" class="cursor-pointer"></canvas></div>
                 </div>
                 <div class="bg-white p-4 rounded shadow">
                     <h3 class="text-center font-bold text-gray-800">各年齡層平均完賽時間</h3>
@@ -69,19 +69,18 @@
             <div class="bg-white p-4 md:p-6 rounded shadow mb-10">
                 
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                    <input type="text" id="bibInput" placeholder="號碼布 (Bib)" class="border p-2 rounded w-full">
-                    <input type="text" id="nameInput" placeholder="姓名 (模糊搜尋)" class="border p-2 rounded w-full">
-                    <select id="natSelect" class="border p-2 rounded w-full">
+                    <input type="text" id="bibInput" placeholder="號碼布 (Bib)" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" oninput="searchRunnersList()">
+                    <input type="text" id="nameInput" placeholder="姓名 (模糊搜尋)" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" oninput="searchRunnersList()">
+                    <select id="natSelect" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" onchange="searchRunnersList()">
                         <option value="">所有國家/地區</option>
                     </select>
-                    <select id="genderSelect" class="border p-2 rounded w-full">
+                    <select id="genderSelect" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" onchange="searchRunnersList()">
                         <option value="">所有性別</option>
                         <option value="男性">男性</option>
                         <option value="女性">女性</option>
                         <option value="非二元性別">非二元性別</option>
                     </select>
                 </div>
-                <button onclick="searchRunnersList()" class="bg-blue-600 text-white px-8 py-2 rounded hover:bg-blue-700 transition w-full md:w-auto font-bold">🔍 搜尋選手</button>
 
                 <div id="listContainer" class="hidden mt-6 max-h-60 overflow-y-auto border rounded bg-gray-50">
                     <table class="w-full text-left text-sm">
@@ -104,9 +103,21 @@
         </div>
     </div>
 
+    <div id="drillDownModal" class="hidden fixed inset-0 bg-black bg-opacity-60 justify-center items-center z-50 backdrop-blur-sm transition-opacity">
+        <div class="bg-white p-6 rounded-lg shadow-2xl w-11/12 md:w-2/3 lg:w-1/2 relative animate-[bounce_0.3s_ease-out]">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h3 id="drillDownTitle" class="text-2xl font-extrabold text-blue-900">時間區間細分數據</h3>
+                <button onclick="document.getElementById('drillDownModal').style.display='none'" class="text-gray-400 hover:text-red-500 text-3xl font-bold leading-none">&times;</button>
+            </div>
+            <p class="text-sm text-gray-500 mb-4">顯示每 10 分鐘為一區間的詳細完賽人數分佈。</p>
+            <div class="relative h-72 w-full"><canvas id="drillDownChart"></canvas></div>
+        </div>
+    </div>
+
     <script>
         let allRunners = [];
         let charts = {};
+        const colors = { '男性': '#3b82f6', '女性': '#ec4899', '非二元性別': '#8b5cf6' };
 
         function timeToSec(timeStr) {
             if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
@@ -140,24 +151,25 @@
         function initChartsAndFilters() {
             let genderCounts = { '男性': 0, '女性': 0, '非二元性別': 0 };
             let nations = {};
+            let nationGenders = {}; // 用於堆疊國家長條圖
             
             let timeDist = { '男性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '女性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '非二元性別': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 } };
             let ageGroups = { '男性': {}, '女性': {}, '非二元性別': {} };
             let pacingStats = { '男性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '女性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '非二元性別': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 } };
 
             allRunners.forEach(r => {
-                // 精準判斷性別 (包含非二元)
                 let gender = '非二元性別'; 
                 if (r.Sex && r.Sex.includes('男')) gender = '男性';
                 else if (r.Sex && r.Sex.includes('女')) gender = '女性';
-                
-                // 為了方便後續過濾，把標準化的性別寫回物件
                 r.ParsedGender = gender;
                 genderCounts[gender]++;
 
-                if (r.Nationality) nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
+                if (r.Nationality) {
+                    nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
+                    if (!nationGenders[r.Nationality]) nationGenders[r.Nationality] = {'男性':0, '女性':0, '非二元性別':0};
+                    nationGenders[r.Nationality][gender]++;
+                }
 
-                // 完賽時間
                 let netHours = timeToHours(r['Net Time']);
                 if (netHours) {
                     if (netHours < 3) timeDist[gender]['Sub 3']++;
@@ -167,7 +179,6 @@
                     else timeDist[gender]['6小時+']++;
                 }
 
-                // 年齡層
                 let age = parseInt(r.Age);
                 if (age && netHours) {
                     let group = Math.floor(age/10)*10 + '代';
@@ -177,7 +188,6 @@
                     ageGroups[gender][group].count++;
                 }
 
-                // 撞牆期
                 let halfSec = timeToSec(r['中間点／Halfway Point_Inter']);
                 let fullSec = timeToSec(r['Net Time']);
                 if (halfSec && fullSec) {
@@ -190,7 +200,6 @@
                 }
             });
 
-            // 填充國籍下拉選單
             let topNations = Object.entries(nations).sort((a,b) => b[1] - a[1]);
             const natSelect = document.getElementById('natSelect');
             topNations.forEach(n => {
@@ -199,29 +208,31 @@
                 natSelect.appendChild(opt);
             });
 
-            // 圖表共同配色設定
-            const colors = { '男性': '#3b82f6', '女性': '#ec4899', '非二元性別': '#8b5cf6' };
-
             // 1. 性別圓餅圖
             if(charts.gender) charts.gender.destroy();
             charts.gender = new Chart(document.getElementById('genderChart'), {
                 type: 'doughnut',
-                data: { 
-                    labels: ['男性', '女性', '非二元性別'], 
-                    datasets: [{ data: [genderCounts['男性'], genderCounts['女性'], genderCounts['非二元性別']], backgroundColor: [colors['男性'], colors['女性'], colors['非二元性別']] }] 
-                },
+                data: { labels: ['男性', '女性', '非二元性別'], datasets: [{ data: [genderCounts['男性'], genderCounts['女性'], genderCounts['非二元性別']], backgroundColor: [colors['男性'], colors['女性'], colors['非二元性別']] }] },
                 options: { maintainAspectRatio: false }
             });
 
-            // 2. 國家排行
+            // 2. 國家排行 (加入性別堆疊 Stacked Bar)
             if(charts.nation) charts.nation.destroy();
+            let top10Labels = topNations.slice(0,10).map(n => n[0]);
             charts.nation = new Chart(document.getElementById('nationChart'), {
                 type: 'bar',
-                data: { labels: topNations.slice(0,10).map(n => n[0]), datasets: [{ label: '人數', data: topNations.slice(0,10).map(n => n[1]), backgroundColor: '#10b981' }] },
-                options: { maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } }
+                data: { 
+                    labels: top10Labels, 
+                    datasets: [
+                        { label: '男性', data: top10Labels.map(n => nationGenders[n]['男性']), backgroundColor: colors['男性'] },
+                        { label: '女性', data: top10Labels.map(n => nationGenders[n]['女性']), backgroundColor: colors['女性'] },
+                        { label: '非二元', data: top10Labels.map(n => nationGenders[n]['非二元性別']), backgroundColor: colors['非二元性別'] }
+                    ] 
+                },
+                options: { maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true }, y: { stacked: true } } }
             });
 
-            // 3. 完賽時間分佈
+            // 3. 完賽時間分佈 (點擊觸發下鑽)
             if(charts.finish) charts.finish.destroy();
             charts.finish = new Chart(document.getElementById('finishTimeChart'), {
                 type: 'bar',
@@ -233,11 +244,20 @@
                         { label: '非二元', data: Object.values(timeDist['非二元性別']), backgroundColor: colors['非二元性別'] }
                     ] 
                 },
-                options: { maintainAspectRatio: false }
+                options: { 
+                    maintainAspectRatio: false,
+                    onClick: (e, elements) => {
+                        if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const label = charts.finish.data.labels[idx];
+                            openDrillDownModal(label);
+                        }
+                    }
+                }
             });
 
-            // 4. 各年齡層平均完賽時間
-            let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男性']), ...Object.keys(ageGroups['女性'])])).sort();
+            // 4. 各年齡層平均完賽時間 (加入非二元)
+            let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男性']), ...Object.keys(ageGroups['女性']), ...Object.keys(ageGroups['非二元性別'])])).sort();
             let getAvg = (gender, g) => ageGroups[gender][g] ? (ageGroups[gender][g].sum / ageGroups[gender][g].count) : null;
             
             if(charts.age) charts.age.destroy();
@@ -247,13 +267,14 @@
                     labels: ageLabels, 
                     datasets: [
                         { label: '男性平均', data: ageLabels.map(g=>getAvg('男性',g)), borderColor: colors['男性'], tension: 0.3, spanGaps: true },
-                        { label: '女性平均', data: ageLabels.map(g=>getAvg('女性',g)), borderColor: colors['女性'], tension: 0.3, spanGaps: true }
+                        { label: '女性平均', data: ageLabels.map(g=>getAvg('女性',g)), borderColor: colors['女性'], tension: 0.3, spanGaps: true },
+                        { label: '非二元平均', data: ageLabels.map(g=>getAvg('非二元性別',g)), borderColor: colors['非二元性別'], tension: 0.3, spanGaps: true }
                     ] 
                 },
                 options: { maintainAspectRatio: false, scales: { y: { min: 2.5 } } }
             });
 
-            // 5. 配速策略與撞牆期
+            // 5. 配速策略與撞牆期 (加入非二元)
             if(charts.wall) charts.wall.destroy();
             charts.wall = new Chart(document.getElementById('wallChart'), {
                 type: 'bar',
@@ -261,27 +282,75 @@
                     labels: Object.keys(pacingStats['男性']), 
                     datasets: [
                         { label: '男性', data: Object.values(pacingStats['男性']), backgroundColor: colors['男性'] },
-                        { label: '女性', data: Object.values(pacingStats['女性']), backgroundColor: colors['女性'] }
+                        { label: '女性', data: Object.values(pacingStats['女性']), backgroundColor: colors['女性'] },
+                        { label: '非二元', data: Object.values(pacingStats['非二元性別']), backgroundColor: colors['非二元性別'] }
                     ] 
                 },
                 options: { maintainAspectRatio: false }
             });
         }
 
-        // --- 新增：多條件篩選列表 ---
+        // --- 點擊打開細分 Modal (如 Sub 4 -> Sub 310, Sub 320...) ---
+        function openDrillDownModal(category) {
+            let minH, maxH;
+            if (category === 'Sub 3') { minH = 2; maxH = 3; } 
+            else if (category === 'Sub 4') { minH = 3; maxH = 4; }
+            else if (category === 'Sub 5') { minH = 4; maxH = 5; }
+            else if (category === 'Sub 6') { minH = 5; maxH = 6; }
+            else { alert('「6小時+」時間區間過大，暫不提供 10 分鐘細分'); return; }
+
+            document.getElementById('drillDownTitle').innerText = `${category} 細分數據`;
+            document.getElementById('drillDownModal').style.display = 'flex';
+
+            let bins = {'男性':[0,0,0,0,0,0], '女性':[0,0,0,0,0,0], '非二元性別':[0,0,0,0,0,0]};
+            let realLabels = [`Sub ${minH}10`, `Sub ${minH}20`, `Sub ${minH}30`, `Sub ${minH}40`, `Sub ${minH}50`, `Sub ${maxH}00`];
+
+            allRunners.forEach(r => {
+                let sec = timeToSec(r['Net Time']);
+                if(!sec) return;
+                let h = sec / 3600;
+                if (h >= minH && h < maxH) {
+                    let minOffset = (sec % 3600) / 60;
+                    let binIndex = Math.floor(minOffset / 10);
+                    if (binIndex > 5) binIndex = 5;
+                    if (bins[r.ParsedGender]) bins[r.ParsedGender][binIndex]++;
+                }
+            });
+
+            if (window.drillChart) window.drillChart.destroy();
+            const ctx = document.getElementById('drillDownChart').getContext('2d');
+            window.drillChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: realLabels,
+                    datasets: [
+                        { label: '男性', data: bins['男性'], backgroundColor: colors['男性'] },
+                        { label: '女性', data: bins['女性'], backgroundColor: colors['女性'] },
+                        { label: '非二元', data: bins['非二元性別'], backgroundColor: colors['非二元性別'] }
+                    ]
+                },
+                options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } }
+            });
+        }
+
+        // --- 實時連動篩選列表 (移除搜尋按鈕後的核心) ---
         function searchRunnersList() {
             const bib = document.getElementById('bibInput').value.trim();
             const name = document.getElementById('nameInput').value.trim().toLowerCase();
             const nat = document.getElementById('natSelect').value;
             const gen = document.getElementById('genderSelect').value;
             
-            // 隱藏詳細圖表區
             document.getElementById('searchResult').style.display = 'none';
             const listContainer = document.getElementById('listContainer');
             const listBody = document.getElementById('listBody');
-            listBody.innerHTML = '';
+            
+            // 若全部為空，隱藏列表
+            if(!bib && !name && !nat && !gen) {
+                listContainer.style.display = 'none';
+                return;
+            }
 
-            // 執行多條件過濾
+            listBody.innerHTML = '';
             let results = allRunners.filter(r => {
                 if (bib && r.Bib !== bib) return false;
                 if (name && (!r.Name || !r.Name.toLowerCase().includes(name))) return false;
@@ -293,20 +362,17 @@
             if (results.length === 0) {
                 listBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500 font-bold">找不到符合條件的選手！</td></tr>`;
             } else {
-                // 限制最多顯示 100 筆避免卡頓
                 let showLimit = Math.min(results.length, 100);
                 for(let i=0; i<showLimit; i++) {
                     let r = results[i];
                     listBody.innerHTML += `
-                        <tr class="border-b hover:bg-blue-100 transition">
+                        <tr class="border-b hover:bg-blue-100 transition cursor-pointer" onclick='renderRunnerDetails(${JSON.stringify(r).replace(/'/g, "&#39;")})'>
                             <td class="p-2">${r.Bib}</td>
                             <td class="p-2 font-bold">${r.Name || '-'}</td>
                             <td class="p-2">${r.ParsedGender} / ${r.Age || '-'}</td>
                             <td class="p-2">${r.Nationality || '-'}</td>
                             <td class="p-2">${r['Gross Time'] || '-'}</td>
-                            <td class="p-2">
-                                <button onclick='renderRunnerDetails(${JSON.stringify(r).replace(/'/g, "&#39;")})' class="bg-green-500 text-white px-3 py-1 rounded text-xs hover:bg-green-600">看數據</button>
-                            </td>
+                            <td class="p-2"><span class="bg-green-500 text-white px-3 py-1 rounded text-xs">看數據</span></td>
                         </tr>
                     `;
                 }
@@ -317,7 +383,7 @@
             listContainer.style.display = 'block';
         }
 
-        // --- 點選列表後：渲染個人詳細戰力與配速圖 (原 searchRunner) ---
+        // --- 渲染單一選手的雙圖表 ---
         function renderRunnerDetails(runner) {
             const resDiv = document.getElementById('searchResult');
             let runnerNetSec = timeToSec(runner['Net Time']);
@@ -357,7 +423,7 @@
             let prAge = totalAge ? ((beatAge / totalAge) * 100).toFixed(1) : '-';
 
             resDiv.innerHTML = `
-                <div class="flex flex-col gap-6">
+                <div class="flex flex-col gap-6 animate-[fadeIn_0.5s_ease-out]">
                     <div class="flex flex-col md:flex-row gap-6">
                         <div class="flex-1 bg-white p-4 rounded shadow-sm border-t-4 border-blue-600">
                             <h3 class="text-2xl font-bold mb-4 text-blue-900">${runner.Name || '未知姓名'}</h3>
@@ -391,7 +457,10 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                         <div class="bg-white p-4 rounded shadow-sm">
                             <h4 class="text-center font-bold text-gray-800 mb-1">完賽時間累積分布圖</h4>
-                            <p class="text-xs text-center text-gray-500 mb-2">說明：紅色圓點代表您在整體賽事中的時間落點。</p>
+                            <p class="text-xs text-center text-gray-500 mb-2 leading-relaxed">
+                                說明：<br><b>【累積分布】</b>表示在該時間前完賽的跑者佔全場的百分比。<br>
+                                <b>【你的落點】</b>即您的 PR 值，代表您擊敗了全場多少比例的跑者。
+                            </p>
                             <div class="relative h-64 md:h-80 w-full"><canvas id="prChart"></canvas></div>
                         </div>
                         <div class="bg-white p-4 rounded shadow-sm">
@@ -403,9 +472,8 @@
                 </div>
             `;
             resDiv.style.display = 'block';
-            resDiv.scrollIntoView({ behavior: 'smooth' }); // 自動捲動到結果區
+            resDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-            // 繪製 PR 曲線
             if (window.prChartInstance) window.prChartInstance.destroy();
             if (runnerNetSec && allValidSecs.length > 0) {
                 allValidSecs.sort((a, b) => a - b);
@@ -431,7 +499,6 @@
                 });
             }
 
-            // 繪製配速曲線
             if (window.lapChartInstance) window.lapChartInstance.destroy();
             const checkpoints = [
                 { label: '5km', field: '5km_Inter', dist: 5 }, { label: '10km', field: '10km_Inter', dist: 10 },
@@ -463,8 +530,8 @@
             });
 
             const getPointColor = (ctx) => {
-                if (avgPaceMin && ctx.raw > avgPaceMin * 1.1) return '#ef4444'; // 撞牆紅
-                return '#f59e0b'; // 正常橘
+                if (avgPaceMin && ctx.raw > avgPaceMin * 1.1) return '#ef4444'; 
+                return '#f59e0b'; 
             };
 
             const ctxLap = document.getElementById('lapChart').getContext('2d');
