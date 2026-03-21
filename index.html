@@ -474,6 +474,7 @@
             resDiv.style.display = 'block';
             resDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
+            // 繪製 PR 曲線
             if (window.prChartInstance) window.prChartInstance.destroy();
             if (runnerNetSec && allValidSecs.length > 0) {
                 allValidSecs.sort((a, b) => a - b);
@@ -485,17 +486,67 @@
                     ecdfData.push(((totalRunnersCount - currentIdx) / totalRunnersCount) * 100);
                 }
 
+                // 🌟 核心修正：視覺吸附與自訂數據
+                // 1. 算出最近的 5 分鐘區間 (300秒) 以對齊 X 軸
+                let roundedSec = Math.round(runnerNetSec / 300) * 300;
+                if (roundedSec < 7200) roundedSec = 7200;
+                if (roundedSec > 25200) roundedSec = 25200;
+                let snapLabel = `${Math.floor(roundedSec / 3600)}:${Math.floor((roundedSec % 3600) / 60).toString().padStart(2, '0')}`;
+
+                // 2. 保留真實時間給提示框顯示
+                let realH = Math.floor(runnerNetSec / 3600);
+                let realM = Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0');
+                let realS = Math.round(runnerNetSec % 60).toString().padStart(2, '0');
+                let realTimeStr = `${realH}:${realM}:${realS}`;
+
                 const ctxPr = document.getElementById('prChart').getContext('2d');
                 window.prChartInstance = new Chart(ctxPr, {
                     type: 'line',
                     data: {
                         labels: ecdfLabels,
                         datasets: [
-                            { label: '累積分布', data: ecdfData, borderColor: '#93c5fd', backgroundColor: 'rgba(147, 197, 253, 0.2)', fill: true, pointRadius: 0, tension: 0.4 },
-                            { type: 'scatter', label: '你的落點', data: [{ x: `${Math.floor(runnerNetSec / 3600)}:${Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0')}`, y: parseFloat(prOverall) }], backgroundColor: '#ef4444', pointRadius: 8, pointBorderColor: '#fff', pointBorderWidth: 2 }
+                            { 
+                                label: '累積分布', 
+                                data: ecdfData, 
+                                borderColor: '#93c5fd', 
+                                backgroundColor: 'rgba(147, 197, 253, 0.2)', 
+                                fill: true, 
+                                pointRadius: 0, 
+                                tension: 0.4 
+                            },
+                            { 
+                                type: 'scatter', 
+                                label: '你的落點', 
+                                // x 軸使用對齊用的 snapLabel，但把真實時間 realTime 藏在物件裡
+                                data: [{ x: snapLabel, y: parseFloat(prOverall), realTime: realTimeStr }], 
+                                backgroundColor: '#ef4444', 
+                                pointRadius: 8, 
+                                pointHoverRadius: 10,
+                                pointBorderColor: '#fff', 
+                                pointBorderWidth: 2 
+                            }
                         ]
                     },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100, min: 0 } } }
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        scales: { y: { max: 100, min: 0 } },
+                        plugins: {
+                            // 🌟 改寫提示框邏輯
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.datasetIndex === 1) {
+                                            // 這是紅點：顯示真實精準時間
+                                            return ` 你的落點: ${context.raw.realTime} (PR ${context.raw.y})`;
+                                        }
+                                        // 這是藍線
+                                        return ` 累積完賽比例: ${context.raw.toFixed(1)}%`;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 });
             }
 
