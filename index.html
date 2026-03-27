@@ -44,7 +44,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
                 <div class="bg-white p-4 rounded shadow group">
                     <h3 class="text-center font-bold text-gray-800">完賽時間分佈</h3>
-                    <p class="text-xs text-center text-gray-500 mb-2">說明：Sub 3 代表三小時內完賽。👉 <span class="text-blue-600 font-bold">點擊圖表柱狀圖，可展開 10 分鐘區間的詳細下鑽數據！</span></p>
+                    <p class="text-xs text-center text-gray-500 mb-2">說明：Sub 3 代表三小時內完賽。👉 <span class="text-blue-600 font-bold">點擊柱狀圖，可下鑽查看 10 分鐘詳細區間！</span></p>
                     <div class="relative h-64"><canvas id="finishTimeChart" class="cursor-pointer"></canvas></div>
                 </div>
                 <div class="bg-white p-4 rounded shadow">
@@ -52,22 +52,43 @@
                     <p class="text-xs text-center text-gray-500 mb-2">說明：以 10 歲為區間，觀察體能隨年齡變化的耐力趨勢。</p>
                     <div class="relative h-64"><canvas id="ageTimeChart"></canvas></div>
                 </div>
+                
                 <div class="bg-white p-4 rounded shadow md:col-span-2">
-                    <h3 class="text-center font-bold text-gray-800">配速策略與撞牆期分析</h3>
+                    <h3 class="text-center font-bold text-gray-800 mb-2">配速策略與撞牆期分析</h3>
+                    
+                    <div class="flex flex-col md:flex-row justify-center items-center gap-3 mb-3">
+                        <select id="wallSplitSelect" class="border-2 border-blue-400 p-2 rounded text-sm font-bold text-blue-900 bg-blue-50 focus:ring focus:ring-blue-200 w-full md:w-auto" onchange="updateWallChart()">
+                            <option value="half">區間：比較【後半馬】與【前半馬】配速</option>
+                            <option value="10k">選項二：比較【後 32km】與【前 10km】配速</option>
+                            <option value="15k">選項三：比較【後 27km】與【前 15km】配速</option>
+                            <option value="20k">選項四：比較【後 22km】與【前 20km】配速</option>
+                            <option value="25k">選項五：比較【後 17km】與【前 25km】配速</option>
+                            <option value="30k">選項六：比較【後 12km】與【前 30km】配速</option>
+                            <option value="35k">選項七：比較【後 7km】與【前 35km】配速</option>
+                            <option value="40k">選項八：比較【最後 2.195km】與【前 40km】配速</option>
+                        </select>
+                        <select id="wallChartTypeSelect" class="border-2 border-green-400 p-2 rounded text-sm font-bold text-green-900 bg-green-50 focus:ring focus:ring-green-200 w-full md:w-auto" onchange="updateWallChart()">
+                            <option value="bar">📊 分組長條圖</option>
+                            <option value="stacked">📚 堆疊長條圖</option>
+                            <option value="line">📈 折線圖</option>
+                            <option value="radar">🕸️ 雷達圖</option>
+                            <option value="doughnut">🍩 甜甜圈圖</option>
+                        </select>
+                    </div>
+
                     <p class="text-xs text-center text-gray-500 mb-2">
-                        💡 <b>定義說明</b>：比較【後半馬】與【前半馬】花費時間。<br>
-                        <span class="text-green-600">完美配速</span>：後半馬比前半馬快 (Negative Split)。
-                        <span class="text-blue-600">平穩完賽</span>：後半馬掉速 < 10%。<br>
-                        <span class="text-yellow-600">撞牆期</span>：後半馬掉速介於 10% ~ 20% 之間。
-                        <span class="text-red-600">嚴重撞牆</span>：後半馬掉速超過 20% 以上！
+                        💡 <b>定義說明</b>：因前後段距離不同，系統會自動換算為<b>「平均配速」</b>進行比較。<br>
+                        <span class="text-green-600">完美配速</span>：後半段配速比前半段快。
+                        <span class="text-blue-600">平穩完賽</span>：後半段掉速 < 10%。<br>
+                        <span class="text-yellow-600">撞牆期</span>：後半段掉速介於 10% ~ 20%。
+                        <span class="text-red-600">嚴重撞牆</span>：後半段掉速超過 20% 以上！
                     </p>
-                    <div class="relative h-64"><canvas id="wallChart"></canvas></div>
+                    <div class="relative h-72 md:h-80 w-full"><canvas id="wallChart"></canvas></div>
                 </div>
             </div>
 
             <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4">3. 戰力與配速查詢 (Runner Search)</h2>
             <div class="bg-white p-4 md:p-6 rounded shadow mb-10">
-                
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <input type="text" id="bibInput" placeholder="號碼布 (Bib)" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" oninput="searchRunnersList()">
                     <input type="text" id="nameInput" placeholder="姓名 (模糊搜尋)" class="border p-2 rounded w-full focus:ring focus:ring-blue-200" oninput="searchRunnersList()">
@@ -117,7 +138,15 @@
     <script>
         let allRunners = [];
         let charts = {};
-        const colors = { '男性': '#3b82f6', '女性': '#ec4899', '非二元性別': '#8b5cf6' };
+        // 為了讓折線圖/雷達圖更清楚，將顏色帶透明度的 rgba 版本也準備好
+        const colors = { 
+            '男性': '#3b82f6', 
+            '女性': '#ec4899', 
+            '非二元性別': '#8b5cf6',
+            '男性_bg': 'rgba(59, 130, 246, 0.4)',
+            '女性_bg': 'rgba(236, 72, 153, 0.4)',
+            '非二元性別_bg': 'rgba(139, 92, 246, 0.4)'
+        };
 
         function timeToSec(timeStr) {
             if (!timeStr || timeStr === '-' || timeStr === 'NaN') return null;
@@ -135,9 +164,7 @@
         window.onload = () => {
             document.getElementById('loading').style.display = 'block';
             Papa.parse(`./data/2026_Tokyo.csv`, { 
-                download: true,
-                header: true,
-                skipEmptyLines: true,
+                download: true, header: true, skipEmptyLines: true,
                 complete: function(results) {
                     allRunners = results.data;
                     document.getElementById('loading').style.display = 'none';
@@ -151,11 +178,9 @@
         function initChartsAndFilters() {
             let genderCounts = { '男性': 0, '女性': 0, '非二元性別': 0 };
             let nations = {};
-            let nationGenders = {}; // 用於堆疊國家長條圖
-            
+            let nationGenders = {}; 
             let timeDist = { '男性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '女性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '非二元性別': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 } };
             let ageGroups = { '男性': {}, '女性': {}, '非二元性別': {} };
-            let pacingStats = { '男性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '女性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '非二元性別': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 } };
 
             allRunners.forEach(r => {
                 let gender = '非二元性別'; 
@@ -187,17 +212,6 @@
                     ageGroups[gender][group].sum += netHours;
                     ageGroups[gender][group].count++;
                 }
-
-                let halfSec = timeToSec(r['中間点／Halfway Point_Inter']);
-                let fullSec = timeToSec(r['Net Time']);
-                if (halfSec && fullSec) {
-                    let firstHalf = halfSec;
-                    let secondHalf = fullSec - halfSec;
-                    if (secondHalf < firstHalf) pacingStats[gender]['完美配速']++;
-                    else if (secondHalf > firstHalf * 1.20) pacingStats[gender]['嚴重撞牆']++;
-                    else if (secondHalf > firstHalf * 1.10) pacingStats[gender]['撞牆期']++;
-                    else pacingStats[gender]['平穩完賽']++;
-                }
             });
 
             let topNations = Object.entries(nations).sort((a,b) => b[1] - a[1]);
@@ -208,7 +222,6 @@
                 natSelect.appendChild(opt);
             });
 
-            // 1. 性別圓餅圖
             if(charts.gender) charts.gender.destroy();
             charts.gender = new Chart(document.getElementById('genderChart'), {
                 type: 'doughnut',
@@ -216,7 +229,6 @@
                 options: { maintainAspectRatio: false }
             });
 
-            // 2. 國家排行 (加入性別堆疊 Stacked Bar)
             if(charts.nation) charts.nation.destroy();
             let top10Labels = topNations.slice(0,10).map(n => n[0]);
             charts.nation = new Chart(document.getElementById('nationChart'), {
@@ -232,7 +244,6 @@
                 options: { maintainAspectRatio: false, indexAxis: 'y', scales: { x: { stacked: true }, y: { stacked: true } } }
             });
 
-            // 3. 完賽時間分佈 (點擊觸發下鑽)
             if(charts.finish) charts.finish.destroy();
             charts.finish = new Chart(document.getElementById('finishTimeChart'), {
                 type: 'bar',
@@ -249,14 +260,12 @@
                     onClick: (e, elements) => {
                         if (elements.length > 0) {
                             const idx = elements[0].index;
-                            const label = charts.finish.data.labels[idx];
-                            openDrillDownModal(label);
+                            openDrillDownModal(charts.finish.data.labels[idx]);
                         }
                     }
                 }
             });
 
-            // 4. 各年齡層平均完賽時間 (加入非二元)
             let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男性']), ...Object.keys(ageGroups['女性']), ...Object.keys(ageGroups['非二元性別'])])).sort();
             let getAvg = (gender, g) => ageGroups[gender][g] ? (ageGroups[gender][g].sum / ageGroups[gender][g].count) : null;
             
@@ -274,30 +283,124 @@
                 options: { maintainAspectRatio: false, scales: { y: { min: 2.5 } } }
             });
 
-            // 5. 配速策略與撞牆期 (加入非二元)
+            // 初始化時呼叫一次繪製預設撞牆圖表
+            updateWallChart();
+        }
+
+        // 🌟 動態重繪撞牆期圖表 (支援切換圖表類型)
+        function updateWallChart() {
+            let pacingStats = { '男性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '女性': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 }, '非二元性別': { '完美配速':0, '平穩完賽':0, '撞牆期':0, '嚴重撞牆':0 } };
+
+            const splitOption = document.getElementById('wallSplitSelect').value;
+            const chartTypeOption = document.getElementById('wallChartTypeSelect').value;
+
+            let splitField = '';
+            let dist1 = 0;
+
+            switch(splitOption) {
+                case 'half': splitField = '中間点／Halfway Point_Inter'; dist1 = 21.0975; break;
+                case '10k': splitField = '10km_Inter'; dist1 = 10; break;
+                case '15k': splitField = '15km_Inter'; dist1 = 15; break;
+                case '20k': splitField = '20km_Inter'; dist1 = 20; break;
+                case '25k': splitField = '25km_Inter'; dist1 = 25; break;
+                case '30k': splitField = '30km_Inter'; dist1 = 30; break;
+                case '35k': splitField = '35km_Inter'; dist1 = 35; break;
+                case '40k': splitField = '40km_Inter'; dist1 = 40; break;
+            }
+
+            const dist2 = 42.195 - dist1;
+
+            allRunners.forEach(r => {
+                let gender = r.ParsedGender;
+                if(!gender) return;
+
+                let time1Sec = timeToSec(r[splitField]);
+                let totalSec = timeToSec(r['Net Time']);
+
+                if (time1Sec && totalSec && totalSec > time1Sec) {
+                    let time2Sec = totalSec - time1Sec;
+                    let pace1 = time1Sec / dist1; 
+                    let pace2 = time2Sec / dist2; 
+
+                    if (pace2 < pace1) pacingStats[gender]['完美配速']++;
+                    else if (pace2 >= pace1 * 1.20) pacingStats[gender]['嚴重撞牆']++;
+                    else if (pace2 >= pace1 * 1.10) pacingStats[gender]['撞牆期']++;
+                    else pacingStats[gender]['平穩完賽']++;
+                }
+            });
+
+            // 判斷選定的圖表類型與其選項設定
+            let chartType = 'bar';
+            let chartOptions = { maintainAspectRatio: false };
+
+            if (chartTypeOption === 'stacked') {
+                chartType = 'bar';
+                chartOptions.scales = { x: { stacked: true }, y: { stacked: true } };
+            } else if (chartTypeOption === 'radar') {
+                chartType = 'radar';
+                chartOptions.scales = { r: { beginAtZero: true } };
+            } else if (chartTypeOption === 'line') {
+                chartType = 'line';
+            } else if (chartTypeOption === 'doughnut') {
+                chartType = 'doughnut';
+                // 🌟 針對甜甜圈圖加入專屬標題與精準 Tooltip
+                chartOptions.plugins = { 
+                    title: { display: true, text: '💡 環狀順序 (由外到內)：男性 ➔ 女性 ➔ 非二元', font: { size: 14 } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return ` ${context.dataset.label} - ${context.label}: ${context.raw} 人`;
+                            }
+                        }
+                    }
+                };
+            }
+
+            // 🌟 甜甜圈圖專屬策略配色 (綠、藍、黃、紅)
+            const strategyColors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']; 
+
             if(charts.wall) charts.wall.destroy();
             charts.wall = new Chart(document.getElementById('wallChart'), {
-                type: 'bar',
+                type: chartType,
                 data: { 
                     labels: Object.keys(pacingStats['男性']), 
                     datasets: [
-                        { label: '男性', data: Object.values(pacingStats['男性']), backgroundColor: colors['男性'] },
-                        { label: '女性', data: Object.values(pacingStats['女性']), backgroundColor: colors['女性'] },
-                        { label: '非二元', data: Object.values(pacingStats['非二元性別']), backgroundColor: colors['非二元性別'] }
+                        { 
+                            label: '男性', 
+                            data: Object.values(pacingStats['男性']), 
+                            backgroundColor: chartType === 'doughnut' ? strategyColors : ((chartType==='radar'||chartType==='line') ? colors['男性_bg'] : colors['男性']),
+                            borderColor: chartType === 'doughnut' ? '#ffffff' : colors['男性'],
+                            borderWidth: 2,
+                            fill: (chartType==='radar'||chartType==='line') ? true : false
+                        },
+                        { 
+                            label: '女性', 
+                            data: Object.values(pacingStats['女性']), 
+                            backgroundColor: chartType === 'doughnut' ? strategyColors : ((chartType==='radar'||chartType==='line') ? colors['女性_bg'] : colors['女性']),
+                            borderColor: chartType === 'doughnut' ? '#ffffff' : colors['女性'],
+                            borderWidth: 2,
+                            fill: (chartType==='radar'||chartType==='line') ? true : false
+                        },
+                        { 
+                            label: '非二元', 
+                            data: Object.values(pacingStats['非二元性別']), 
+                            backgroundColor: chartType === 'doughnut' ? strategyColors : ((chartType==='radar'||chartType==='line') ? colors['非二元性別_bg'] : colors['非二元性別']),
+                            borderColor: chartType === 'doughnut' ? '#ffffff' : colors['非二元性別'],
+                            borderWidth: 2,
+                            fill: (chartType==='radar'||chartType==='line') ? true : false
+                        }
                     ] 
                 },
-                options: { maintainAspectRatio: false }
+                options: chartOptions
             });
-        }
-
-        // --- 點擊打開細分 Modal (如 Sub 4 -> Sub 310, Sub 320...) ---
+        }        // --- 下鑽與個人查詢邏輯維持完美運作 ---
         function openDrillDownModal(category) {
             let minH, maxH;
             if (category === 'Sub 3') { minH = 2; maxH = 3; } 
             else if (category === 'Sub 4') { minH = 3; maxH = 4; }
             else if (category === 'Sub 5') { minH = 4; maxH = 5; }
             else if (category === 'Sub 6') { minH = 5; maxH = 6; }
-            else { alert('「6小時+」時間區間過大，暫不提供 10 分鐘細分'); return; }
+            else { alert('「6小時+」時間區間過大，暫不提供細分'); return; }
 
             document.getElementById('drillDownTitle').innerText = `${category} 細分數據`;
             document.getElementById('drillDownModal').style.display = 'flex';
@@ -333,7 +436,6 @@
             });
         }
 
-        // --- 實時連動篩選列表 (移除搜尋按鈕後的核心) ---
         function searchRunnersList() {
             const bib = document.getElementById('bibInput').value.trim();
             const name = document.getElementById('nameInput').value.trim().toLowerCase();
@@ -344,11 +446,7 @@
             const listContainer = document.getElementById('listContainer');
             const listBody = document.getElementById('listBody');
             
-            // 若全部為空，隱藏列表
-            if(!bib && !name && !nat && !gen) {
-                listContainer.style.display = 'none';
-                return;
-            }
+            if(!bib && !name && !nat && !gen) { listContainer.style.display = 'none'; return; }
 
             listBody.innerHTML = '';
             let results = allRunners.filter(r => {
@@ -376,14 +474,11 @@
                         </tr>
                     `;
                 }
-                if(results.length > 100) {
-                    listBody.innerHTML += `<tr><td colspan="6" class="p-4 text-center text-gray-500 text-xs">找到 ${results.length} 筆資料，僅顯示前 100 筆，請增加搜尋條件。</td></tr>`;
-                }
+                if(results.length > 100) listBody.innerHTML += `<tr><td colspan="6" class="p-4 text-center text-gray-500 text-xs">找到 ${results.length} 筆資料，僅顯示前 100 筆，請增加搜尋條件。</td></tr>`;
             }
             listContainer.style.display = 'block';
         }
 
-        // --- 渲染單一選手的雙圖表 ---
         function renderRunnerDetails(runner) {
             const resDiv = document.getElementById('searchResult');
             let runnerNetSec = timeToSec(runner['Net Time']);
@@ -401,19 +496,9 @@
                         allValidSecs.push(sec);
                         totalOverall++;
                         if (sec > runnerNetSec) beatOverall++;
-
-                        if (r.ParsedGender === runner.ParsedGender) {
-                            totalGender++;
-                            if (sec > runnerNetSec) beatGender++;
-                        }
-
-                        let rAge = parseInt(r.Age);
-                        let g = rAge ? (Math.floor(rAge/10)*10 + '代') : '未知';
-                        if (rAge < 20) g = '20以下';
-                        if (g === runnerAgeGroup) {
-                            totalAge++;
-                            if (sec > runnerNetSec) beatAge++;
-                        }
+                        if (r.ParsedGender === runner.ParsedGender) { totalGender++; if (sec > runnerNetSec) beatGender++; }
+                        let rAge = parseInt(r.Age); let g = rAge ? (Math.floor(rAge/10)*10 + '代') : '未知'; if (rAge < 20) g = '20以下';
+                        if (g === runnerAgeGroup) { totalAge++; if (sec > runnerNetSec) beatAge++; }
                     }
                 });
             }
@@ -474,7 +559,6 @@
             resDiv.style.display = 'block';
             resDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-            // 繪製 PR 曲線
             if (window.prChartInstance) window.prChartInstance.destroy();
             if (runnerNetSec && allValidSecs.length > 0) {
                 allValidSecs.sort((a, b) => a - b);
@@ -486,18 +570,11 @@
                     ecdfData.push(((totalRunnersCount - currentIdx) / totalRunnersCount) * 100);
                 }
 
-                // 🌟 核心修正：視覺吸附與自訂數據
-                // 1. 算出最近的 5 分鐘區間 (300秒) 以對齊 X 軸
                 let roundedSec = Math.round(runnerNetSec / 300) * 300;
                 if (roundedSec < 7200) roundedSec = 7200;
                 if (roundedSec > 25200) roundedSec = 25200;
                 let snapLabel = `${Math.floor(roundedSec / 3600)}:${Math.floor((roundedSec % 3600) / 60).toString().padStart(2, '0')}`;
-
-                // 2. 保留真實時間給提示框顯示
-                let realH = Math.floor(runnerNetSec / 3600);
-                let realM = Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0');
-                let realS = Math.round(runnerNetSec % 60).toString().padStart(2, '0');
-                let realTimeStr = `${realH}:${realM}:${realS}`;
+                let realTimeStr = `${Math.floor(runnerNetSec / 3600)}:${Math.floor((runnerNetSec % 3600) / 60).toString().padStart(2, '0')}:${Math.round(runnerNetSec % 60).toString().padStart(2, '0')}`;
 
                 const ctxPr = document.getElementById('prChart').getContext('2d');
                 window.prChartInstance = new Chart(ctxPr, {
@@ -505,47 +582,13 @@
                     data: {
                         labels: ecdfLabels,
                         datasets: [
-                            { 
-                                label: '累積分布', 
-                                data: ecdfData, 
-                                borderColor: '#93c5fd', 
-                                backgroundColor: 'rgba(147, 197, 253, 0.2)', 
-                                fill: true, 
-                                pointRadius: 0, 
-                                tension: 0.4 
-                            },
-                            { 
-                                type: 'scatter', 
-                                label: '你的落點', 
-                                // x 軸使用對齊用的 snapLabel，但把真實時間 realTime 藏在物件裡
-                                data: [{ x: snapLabel, y: parseFloat(prOverall), realTime: realTimeStr }], 
-                                backgroundColor: '#ef4444', 
-                                pointRadius: 8, 
-                                pointHoverRadius: 10,
-                                pointBorderColor: '#fff', 
-                                pointBorderWidth: 2 
-                            }
+                            { label: '累積分布', data: ecdfData, borderColor: '#93c5fd', backgroundColor: 'rgba(147, 197, 253, 0.2)', fill: true, pointRadius: 0, tension: 0.4 },
+                            { type: 'scatter', label: '你的落點', data: [{ x: snapLabel, y: parseFloat(prOverall), realTime: realTimeStr }], backgroundColor: '#ef4444', pointRadius: 8, pointHoverRadius: 10, pointBorderColor: '#fff', pointBorderWidth: 2 }
                         ]
                     },
                     options: { 
-                        responsive: true, 
-                        maintainAspectRatio: false, 
-                        scales: { y: { max: 100, min: 0 } },
-                        plugins: {
-                            // 🌟 改寫提示框邏輯
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        if (context.datasetIndex === 1) {
-                                            // 這是紅點：顯示真實精準時間
-                                            return ` 你的落點: ${context.raw.realTime} (PR ${context.raw.y})`;
-                                        }
-                                        // 這是藍線
-                                        return ` 累積完賽比例: ${context.raw.toFixed(1)}%`;
-                                    }
-                                }
-                            }
-                        }
+                        responsive: true, maintainAspectRatio: false, scales: { y: { max: 100, min: 0 } },
+                        plugins: { tooltip: { callbacks: { label: function(context) { return context.datasetIndex === 1 ? ` 你的落點: ${context.raw.realTime} (PR ${context.raw.y})` : ` 累積完賽比例: ${context.raw.toFixed(1)}%`; } } } }
                     }
                 });
             }
@@ -580,18 +623,13 @@
                 }
             });
 
-            const getPointColor = (ctx) => {
-                if (avgPaceMin && ctx.raw > avgPaceMin * 1.1) return '#ef4444'; 
-                return '#f59e0b'; 
-            };
-
             const ctxLap = document.getElementById('lapChart').getContext('2d');
             window.lapChartInstance = new Chart(ctxLap, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
                     datasets: [
-                        { label: '該段配速', data: chartData, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', borderWidth: 2, pointBackgroundColor: function(c) { return getPointColor(c); }, pointRadius: 6, fill: true, tension: 0.2 },
+                        { label: '該段配速', data: chartData, borderColor: '#f59e0b', backgroundColor: 'rgba(245, 158, 11, 0.1)', borderWidth: 2, pointBackgroundColor: function(c) { return (avgPaceMin && c.raw > avgPaceMin * 1.1) ? '#ef4444' : '#f59e0b'; }, pointRadius: 6, fill: true, tension: 0.2 },
                         { label: `平均配速 (${avgPaceStr} /km)`, data: Array(chartLabels.length).fill(avgPaceMin), borderColor: '#3b82f6', borderDash: [5, 5], borderWidth: 2, pointRadius: 0, fill: false, tension: 0 }
                     ]
                 },
