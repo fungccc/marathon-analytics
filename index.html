@@ -293,15 +293,21 @@
             let timeDist = { '男性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '女性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '非二元性別': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 } };
             let ageGroups = { '男性': {}, '女性': {}, '非二元性別': {} };
 
-            allRunners.forEach(r => {
+                        allRunners.forEach(r => {
                 let gender = '非二元性別'; 
                 if (r.Sex) {
-                    let s = String(r.Sex).toLowerCase(); 
-                    if (s.includes('男') || s.includes('men') || s.includes('male') || s === 'm') gender = '男性';
-                    else if (s.includes('女') || s.includes('women') || s.includes('female') || s === 'w' || s === 'f') gender = '女性';
+                    let s = String(r.Sex).toLowerCase();
+                    // 優先判斷女性，避開 women 包含 men、female 包含 male 的字串陷阱
+                    if (s.includes('女') || s.includes('women') || s.includes('female') || s === 'w' || s === 'f') {
+                        gender = '女性';
+                    } 
+                    else if (s.includes('男') || s.includes('men') || s.includes('male') || s === 'm') {
+                        gender = '男性';
+                    }
                 }
                 r.ParsedGender = gender;
                 genderCounts[gender]++;
+
 
                 if (r.Nationality) {
                     nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
