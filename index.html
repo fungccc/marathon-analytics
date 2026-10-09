@@ -40,7 +40,7 @@
         </header>
 
         <div id="loading" class="text-center text-xl text-blue-600 font-bold my-10 animate-pulse">
-            ⏳ 正在準備中，請稍候...
+            ⏳ 正在掃描可用賽事資料...
         </div>
 
         <div id="dashboard" class="hidden">
@@ -127,7 +127,7 @@
                             <tr>
                                 <th class="p-2">號碼</th>
                                 <th class="p-2">姓名</th>
-                                <th class="p-2">性別/年齡</th>
+                                <th class="p-2">性別/組別</th>
                                 <th class="p-2">國籍</th>
                                 <th class="p-2">大會時間</th>
                                 <th class="p-2">操作</th>
@@ -152,14 +152,12 @@
 
             <!-- 5. 賽道擁擠度模擬 -->
             <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4 mt-8">5. 賽道擁擠度模擬 (Traffic Heatmap)</h2>
-            <div class="bg-white p-4 md:p-6 rounded shadow mb-10">
-                <div class="flex flex-col md:flex-row items-center gap-4 mb-4">
-                    <label class="font-bold text-gray-700 whitespace-nowrap">開賽時間 (Net): <span id="timeSliderLabel" class="text-blue-600">03:00:00</span></label>
-                    <input type="range" id="timeSlider" min="0" max="25200" step="300" value="10800" class="w-full" oninput="updateTrafficChart(this.value)">
-                </div>
-                <p class="text-xs text-gray-500 mb-2">說明：拉動滑桿，可查看在該時間點，多數跑者所在的賽道區段（幾點去哪裡加油最好）。</p>
-                <div class="relative h-64 w-full"><canvas id="trafficChart"></canvas></div>
+            <div class="flex flex-col md:flex-row items-center gap-4 mb-4">
+                <label class="font-bold text-gray-700 whitespace-nowrap">開賽時間 (Net): <span id="timeSliderLabel" class="text-blue-600">03:00:00</span></label>
+                <input type="range" id="timeSlider" min="0" max="25200" step="300" value="10800" class="w-full" oninput="updateTrafficChart(this.value)">
             </div>
+            <p class="text-xs text-gray-500 mb-2">說明：拉動滑桿，可查看在該時間點，多數跑者所在的賽道區段（幾點去哪裡加油最好）。</p>
+            <div class="relative h-64 w-full"><canvas id="trafficChart"></canvas></div>
 
             <!-- 6. 完賽預測與配速模擬 -->
             <h2 class="text-2xl font-bold border-b-2 border-blue-200 pb-2 mb-4 mt-8">6. 完賽預測與配速模擬 (Pace Predictor)</h2>
@@ -172,8 +170,13 @@
                         <option value="非二元性別">非二元性別</option>
                     </select>
                     <select id="predAge" class="border p-2 rounded w-full focus:ring focus:ring-blue-200">
-                        <option value="20代">20代</option><option value="30代">30代</option><option value="40代" selected>40代</option>
-                        <option value="50代">50代</option><option value="60代">60代</option>
+                        <option value="20以下">20以下</option>
+                        <option value="20代">20代</option>
+                        <option value="30代">30代</option>
+                        <option value="40代" selected>40代</option>
+                        <option value="50代">50代</option>
+                        <option value="60代">60代</option>
+                        <option value="70代">70代</option>
                     </select>
                     <button onclick="predictFinishTime()" class="bg-blue-600 text-white font-bold rounded p-2 hover:bg-blue-700 transition">大數據預測</button>
                 </div>
@@ -218,6 +221,27 @@
             return secs ? secs / 3600 : null;
         }
 
+        // 智慧解析年齡組別 (兼容東京實體年齡，以及柏林 H / 30 / 35 / 40 等組別規格)
+        function extractAgeGroup(ageVal, raceCategory) {
+            let a = parseInt(ageVal);
+            if (!isNaN(a) && a > 0) {
+                if (a < 20) return '20以下';
+                return Math.floor(a / 10) * 10 + '代';
+            }
+            if (raceCategory) {
+                let cat = String(raceCategory).trim().toUpperCase();
+                if (cat.includes('U20') || cat.includes('U18')) return '20以下';
+                if (cat === 'H') return '20代'; // 德國柏林馬拉松 H (Hauptklasse, 20-29歲)
+                let numMatch = cat.match(/\d+/);
+                if (numMatch) {
+                    let n = parseInt(numMatch[0]);
+                    if (n >= 20) return Math.floor(n / 10) * 10 + '代';
+                    if (n > 0 && n < 20) return '20以下';
+                }
+            }
+            return null;
+        }
+
         window.onload = async () => {
             const select = document.getElementById('raceSelect');
             const options = Array.from(select.options);
@@ -227,8 +251,10 @@
             for (let opt of options) {
                 try {
                     let response = await fetch(`./data/${opt.value}`, { method: 'HEAD' });
-                    if (!response.ok) opt.remove();
-                } catch (e) { } // 靜默處理
+                    if (!response.ok) {
+                        opt.remove(); 
+                    }
+                } catch (e) { }
             }
             
             document.querySelectorAll('#raceSelect optgroup').forEach(group => {
@@ -245,7 +271,7 @@
         function loadRaceData(filename) {
             document.getElementById('dashboard').style.display = 'none';
             document.getElementById('loading').style.display = 'block';
-            document.getElementById('loading').innerText = '⏳ 正在解析與運算賽事資料中，請稍候...';
+            document.getElementById('loading').innerText = '⏳ 正在解析資料，請稍候...';
             document.getElementById('searchResult').style.display = 'none';
             document.getElementById('listContainer').style.display = 'none';
             
@@ -260,7 +286,15 @@
                 skipEmptyLines: true,
                 complete: function(results) {
                     allRunners = results.data.map(r => {
-                        let isBerlin = !!r['HALF_Lap']; // 藉由 HALF_Lap 判斷柏林格式
+                        // 清理異常資料 (-0 或 0)
+                        ['Age', 'City', 'State'].forEach(col => {
+                            if (r[col] === '-0' || String(r[col]).trim() === '0') {
+                                r[col] = '';
+                            }
+                        });
+
+                        // 統一映射不同賽事的「累積時間」欄位名稱
+                        let isBerlin = !!r['HALF_Lap']; 
                         if (isBerlin) {
                             r['std_5km'] = r['5km_Lap']; r['std_10km'] = r['10km_Lap']; r['std_15km'] = r['15km_Lap'];
                             r['std_20km'] = r['20km_Lap']; r['std_Half'] = r['HALF_Lap']; r['std_25km'] = r['25km_Lap'];
@@ -272,6 +306,10 @@
                             r['std_25km'] = r['25km_Inter']; r['std_30km'] = r['30km_Inter']; r['std_35km'] = r['35km_Inter'];
                             r['std_40km'] = r['40km_Inter']; r['std_Finish'] = r['フィニッシュ／Finish_Inter'] || r['Finish_Inter'];
                         }
+
+                        // 標準化解析組別年齡
+                        r.ParsedAgeGroup = extractAgeGroup(r.Age, r['Race Category']);
+
                         return r;
                     });
 
@@ -293,21 +331,19 @@
             let timeDist = { '男性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '女性': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 }, '非二元性別': { 'Sub 3':0, 'Sub 4':0, 'Sub 5':0, 'Sub 6':0, '6小時+':0 } };
             let ageGroups = { '男性': {}, '女性': {}, '非二元性別': {} };
 
-                        allRunners.forEach(r => {
+            allRunners.forEach(r => {
                 let gender = '非二元性別'; 
                 if (r.Sex) {
-                    let s = String(r.Sex).toLowerCase();
-                    // 優先判斷女性，避開 women 包含 men、female 包含 male 的字串陷阱
+                    let s = String(r.Sex).toLowerCase().trim();
+                    // 關鍵修正：女性關鍵字必須優先匹配（避免 women 包含 men、female 包含 male）
                     if (s.includes('女') || s.includes('women') || s.includes('female') || s === 'w' || s === 'f') {
                         gender = '女性';
-                    } 
-                    else if (s.includes('男') || s.includes('men') || s.includes('male') || s === 'm') {
+                    } else if (s.includes('男') || s.includes('men') || s.includes('male') || s === 'm') {
                         gender = '男性';
                     }
                 }
                 r.ParsedGender = gender;
                 genderCounts[gender]++;
-
 
                 if (r.Nationality) {
                     nations[r.Nationality] = (nations[r.Nationality] || 0) + 1;
@@ -324,10 +360,9 @@
                     else timeDist[gender]['6小時+']++;
                 }
 
-                let age = parseInt(r.Age);
-                if (age && netHours) {
-                    let group = Math.floor(age/10)*10 + '代';
-                    if (age < 20) group = '20以下';
+                // 年齡統計：使用標準化組別
+                let group = r.ParsedAgeGroup;
+                if (group && netHours) {
                     if (!ageGroups[gender][group]) ageGroups[gender][group] = {sum:0, count:0};
                     ageGroups[gender][group].sum += netHours;
                     ageGroups[gender][group].count++;
@@ -387,7 +422,10 @@
                 }
             });
 
-            let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男性']), ...Object.keys(ageGroups['女性']), ...Object.keys(ageGroups['非二元性別'])])).sort();
+            // 年齡排序規則
+            const sortOrder = ['20以下', '20代', '30代', '40代', '50代', '60代', '70代', '80代'];
+            let ageLabels = Array.from(new Set([...Object.keys(ageGroups['男性']), ...Object.keys(ageGroups['女性']), ...Object.keys(ageGroups['非二元性別'])]))
+                .sort((a,b) => sortOrder.indexOf(a) - sortOrder.indexOf(b));
             let getAvg = (gender, g) => ageGroups[gender][g] ? (ageGroups[gender][g].sum / ageGroups[gender][g].count) : null;
             
             if(charts.age) charts.age.destroy();
@@ -401,7 +439,7 @@
                         { label: '非二元平均', data: ageLabels.map(g=>getAvg('非二元性別',g)), borderColor: colors['非二元性別'], tension: 0.3, spanGaps: true }
                     ] 
                 },
-                options: { maintainAspectRatio: false, scales: { y: { min: 2.5 } } }
+                options: { maintainAspectRatio: false, scales: { y: { min: 2.0 } } }
             });
 
             updateWallChart();
@@ -562,7 +600,7 @@
 
             listBody.innerHTML = '';
             let results = allRunners.filter(r => {
-                if (bib && r.Bib !== bib) return false;
+                if (bib && String(r.Bib) !== bib) return false;
                 if (name && (!r.Name || !r.Name.toLowerCase().includes(name))) return false;
                 if (nat && r.Nationality !== nat) return false;
                 if (gen && r.ParsedGender !== gen) return false;
@@ -579,7 +617,7 @@
                         <tr class="border-b hover:bg-blue-100 transition">
                             <td class="p-2">${r.Bib}</td>
                             <td class="p-2 font-bold">${r.Name || '-'}</td>
-                            <td class="p-2">${r.ParsedGender} / ${r.Age || '-'}</td>
+                            <td class="p-2">${r.ParsedGender} / ${r.Age ? r.Age + '歲' : (r.ParsedAgeGroup || '-')}</td>
                             <td class="p-2">${r.Nationality || '-'}</td>
                             <td class="p-2">${r['Gross Time'] || '-'}</td>
                             <td class="p-2">
@@ -598,9 +636,7 @@
             const resDiv = document.getElementById('searchResult');
             let runnerNetSec = timeToSec(runner['Net Time']);
             let beatOverall = 0, totalOverall = 0;
-            let runnerAge = parseInt(runner.Age);
-            let runnerAgeGroup = runnerAge ? (Math.floor(runnerAge/10)*10 + '代') : '未知';
-            if (runnerAge < 20) runnerAgeGroup = '20以下';
+            let runnerAgeGroup = runner.ParsedAgeGroup || '未知';
 
             let allValidSecs = [];
 
@@ -639,12 +675,12 @@
             let rCat = runner['Race Category'] || runnerAgeGroup; 
             let rGen = runner.ParsedGender;
 
-            let rank1 = getRanking(runnerNetSec, r => r['Race Category'] === rCat && r.ParsedGender === rGen && r.Nationality === rNat);
-            let rank2 = getRanking(runnerNetSec, r => r['Race Category'] === rCat && r.Nationality === rNat);
+            let rank1 = getRanking(runnerNetSec, r => (r['Race Category'] === rCat || r.ParsedAgeGroup === runnerAgeGroup) && r.ParsedGender === rGen && r.Nationality === rNat);
+            let rank2 = getRanking(runnerNetSec, r => (r['Race Category'] === rCat || r.ParsedAgeGroup === runnerAgeGroup) && r.Nationality === rNat);
             let rank3 = getRanking(runnerNetSec, r => r.Nationality === rNat);
             let rank4 = getRanking(runnerNetSec, r => r.ParsedGender === rGen && r.Nationality === rNat);
             let rank5 = getRanking(runnerNetSec, r => r.ParsedGender === rGen);
-            let rank6 = getRanking(runnerNetSec, r => r['Race Category'] === rCat);
+            let rank6 = getRanking(runnerNetSec, r => (r['Race Category'] === rCat || r.ParsedAgeGroup === runnerAgeGroup));
             let rank7 = getRanking(runnerNetSec, r => true);
 
             resDiv.innerHTML = `
@@ -656,7 +692,7 @@
                             <p class="mb-1"><strong>晶片時間 (Net)：</strong> <span class="text-lg font-bold text-green-600">${runner['Net Time'] || '-'}</span></p>
                             <p class="mb-1"><strong>總排名：</strong> ${runner['Overall Place'] || '-'}</p>
                             <p class="mb-1"><strong>組別/國籍：</strong> ${runner['Race Category'] || '-'} / ${runner.Nationality || '-'}</p>
-                            <p class="mb-1"><strong>年齡/性別：</strong> ${runner.Age || '-'} 歲 / ${runner.ParsedGender}</p>
+                            <p class="mb-1"><strong>年齡/性別：</strong> ${runner.Age ? runner.Age + ' 歲' : runnerAgeGroup} / ${runner.ParsedGender}</p>
                         </div>
                         
                         <div class="flex-1 bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 rounded shadow-sm border-t-4 border-yellow-500">
@@ -807,21 +843,20 @@
 
         // --- 4. 虛擬對手 PK 模式 ---
         let pkRunners = [];
-        
         function addToPK(runner) {
             if(pkRunners.length >= 5) { alert('最多只能同時 PK 5 位選手！'); return; }
-            if(pkRunners.find(r => r.Bib === runner.Bib)) { alert('該選手已經在 PK 名單中！'); return; }
+            if(pkRunners.find(r => String(r.Bib) === String(runner.Bib))) { alert('該選手已經在 PK 名單中！'); return; }
             pkRunners.push(runner);
             renderPKChart();
             document.getElementById('pkList').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
         
+        function clearPK() { pkRunners = []; renderPKChart(); }
+        
         function removeFromPK(bib) {
             pkRunners = pkRunners.filter(r => String(r.Bib) !== String(bib));
             renderPKChart();
         }
-
-        function clearPK() { pkRunners = []; renderPKChart(); }
 
         function renderPKChart() {
             const pkListDiv = document.getElementById('pkList');
@@ -933,15 +968,13 @@
 
             let similarRunners = [];
             allRunners.forEach(r => {
-                if (r.ParsedGender === gen && r.Age) {
-                    let rAge = parseInt(r.Age);
-                    let rAgeGroup = (Math.floor(rAge/10)*10) + '代';
-                    if (rAgeGroup === ageStr) {
-                        let rHalf = timeToSec(r.std_Half);
-                        let rFinish = timeToSec(r['Net Time']);
-                        if (rHalf && rFinish && Math.abs(rHalf - halfSec) <= 180) {
-                            similarRunners.push({ half: rHalf, finish: rFinish });
-                        }
+                // 使用跨賽事標準化組別 ParsedAgeGroup
+                if (r.ParsedGender === gen && r.ParsedAgeGroup === ageStr) {
+                    let rHalf = timeToSec(r.std_Half);
+                    let rFinish = timeToSec(r['Net Time']);
+                    // 尋找半馬在正負 3 分鐘 (180秒) 內的歷史同組跑者
+                    if (rHalf && rFinish && Math.abs(rHalf - halfSec) <= 180) {
+                        similarRunners.push({ half: rHalf, finish: rFinish });
                     }
                 }
             });
@@ -950,7 +983,7 @@
             resDiv.style.display = 'block';
 
             if (similarRunners.length < 5) {
-                resDiv.innerHTML = `<span class="text-red-500 font-bold">抱歉，符合您條件的歷史數據不足 (小於 5 筆)，無法準確預測。</span>`;
+                resDiv.innerHTML = `<span class="text-red-500 font-bold">抱歉，歷史數據中與您條件相仿的選手不足 (${similarRunners.length} 筆，需至少 5 筆)，無法給出穩定預測。</span>`;
                 return;
             }
 
@@ -968,7 +1001,7 @@
 
             resDiv.innerHTML = `
                 <h3 class="text-2xl font-bold text-blue-900 mb-2">大數據預測完賽時間：<span class="text-green-600">${avgFinishStr}</span></h3>
-                <p class="text-gray-700">基於 <b>${similarRunners.length}</b> 位與您實力相仿（半馬 ${halfTimeStr}）的同齡跑者軌跡：</p>
+                <p class="text-gray-700">基於 <b>${similarRunners.length}</b> 位與您實力相仿（半馬約 ${halfTimeStr}、${ageStr}、${gen}）的選手實際完賽軌跡：</p>
                 <p class="text-sm mt-2 font-bold ${wallRate > 50 ? 'text-red-600' : 'text-yellow-700'}">
                     ⚠️ 歷史數據顯示，有 <b>${wallRate}%</b> 的相仿跑者在後半馬發生撞牆（掉速 > 10%）。
                 </p>
